@@ -1,3 +1,23 @@
+/*
+ * =============================================================================
+ *  Board support: GUITION JC1060P470C (JC1060P470C_I_W / _Y)
+ * =============================================================================
+ *  Аппаратура:
+ *    - ESP32-P4 (инженерный образец v1.0 / v1.3) + ESP32-C6 (Wi-Fi 6)
+ *    - Дисплей: 7" 1024×600 IPS, контроллер JD9165, MIPI-DSI 2-lane
+ *    - Тач: GT911 (I²C, общая шина с ES8311)
+ *    - Аудио: ES8311 + усилитель (PA)
+ *    - Камера: MIPI-CSI (EspVideo)
+ *
+ *  Основано на официальном демо Guition:
+ *    P4-series/.../examples/xiaozhi/jc1060p470/
+ *  Адаптировано под структуру xiaozhi-esp32 (современный API).
+ *
+ *  IDF: 5.5.x (проверено для 5.5.5)
+ *  Зависимость: idf.py add-dependency "espressif/esp_lcd_jd9165^1.0.2"
+ * =============================================================================
+ */
+
 #include "application.h"
 #include "audio/codecs/es8311_audio_codec.h"
 #include "button.h"
@@ -19,16 +39,8 @@
 #include <esp_vfs_fat.h>
 #include <sdmmc_cmd.h>
 
-/*
- * Note on LCD panel:
- * Official Function-EV uses EK79007. This Guition board uses JD9165.
- * The MIPI-DSI + DPI path is the same. If the screen stays black, add
- * the esp_lcd_jd9165 component (or the vendor init sequence from the
- * Guition package) and replace the panel creation below.
- * For a first bring-up many boards work with the EK79007-style path
- * once LDO + reset + backlight are correct; adapt as needed.
- */
-#include "esp_lcd_ek79007.h"
+/* Драйвер панели JD9165 (компонент espressif/esp_lcd_jd9165) */
+#include "esp_lcd_jd9165.h"
 #include "esp_lcd_touch_gt911.h"
 #include "sd_pwr_ctrl_by_on_chip_ldo.h"
 
@@ -49,6 +61,7 @@ private:
     sd_pwr_ctrl_handle_t sd_power_ = nullptr;
     bool sd_card_mounted_ = false;
 
+    /* ---------- I²C: общая шина для ES8311 и GT911 ---------- */
     void InitializeI2cBus() {
         i2c_master_bus_config_t i2c_bus_config = {
             .i2c_port = AUDIO_CODEC_I2C_PORT,
@@ -58,22 +71,31 @@ private:
             .glitch_ignore_cnt = 7,
             .intr_priority = 0,
             .trans_queue_depth = 0,
-            .flags =
-                {
-                    .enable_internal_pullup = 1,
-                },
+            .flags = {
+                .enable_internal_pullup = 1,
+            },
         };
         ESP_ERROR_CHECK(i2c_new_master_bus(&i2c_bus_config, &codec_i2c_bus_));
+        ESP_LOGI(TAG, "I2C шина инициализирована (SDA=%d SCL=%d)",
+                 AUDIO_CODEC_I2C_SDA_PIN, AUDIO_CODEC_I2C_SCL_PIN);
     }
 
-    void InitializeLcd() {
-        // Enable MIPI DSI PHY power (LDO channel 3 @ 2.5 V)
+    /* ---------- Питание PHY MIPI-DSI (LDO канал 3, 2.5 В) ---------- */
+    void EnableDsiPhyPower() {
         esp_ldo_channel_config_t ldo_config = {
             .chan_id = MIPI_DSI_PHY_PWR_LDO_CHAN,
             .voltage_mv = MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV,
         };
         ESP_ERROR_CHECK(esp_ldo_acquire_channel(&ldo_config, &dsi_phy_power_));
+        ESP_LOGI(TAG, "Питание MIPI DSI PHY включено (LDO ch%d, %d мВ)",
+                 MIPI_DSI_PHY_PWR_LDO_CHAN, MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV);
+    }
 
+    /* ---------- Дисплей JD9165 1024×600 ---------- */
+    void InitializeLcd() {
+        EnableDsiPhyPower();
+
+        /* Шина MIPI-DSI: 2 линии, 900 Мбит/с (как в офиц. демо Guition) */
         esp_lcd_dsi_bus_config_t bus_config = {
             .bus_id = 0,
             .num_data_lanes = LCD_MIPI_DSI_LANE_NUM,
@@ -81,6 +103,7 @@ private:
         };
         ESP_ERROR_CHECK(esp_lcd_new_dsi_bus(&bus_config, &dsi_bus_));
 
+        /* DBI-интерфейс для команд панели */
         esp_lcd_panel_io_handle_t panel_io = nullptr;
         esp_lcd_dbi_io_config_t dbi_config = {
             .virtual_channel = 0,
@@ -89,21 +112,21 @@ private:
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_dbi(dsi_bus_, &dbi_config, &panel_io));
 
-        // 1024x600 @ ~60 Hz – same timing family as Function-EV
+        /* DPI-конфиг 1024×600 @ 60 Гц, RGB565 — из драйвера JD9165 */
         esp_lcd_dpi_panel_config_t dpi_config =
-            EK79007_1024_600_PANEL_60HZ_CONFIG_CF(LCD_COLOR_FMT_RGB565);
+            JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(LCD_COLOR_PIXEL_FORMAT_RGB565);
         dpi_config.num_fbs = 1;
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
         dpi_config.flags.use_dma2d = true;
 #endif
 
-        ek79007_vendor_config_t vendor_config = {
-            .mipi_config =
-                {
-                    .dsi_bus = dsi_bus_,
-                    .dpi_config = &dpi_config,
-                },
+        jd9165_vendor_config_t vendor_config = {
+            .mipi_config = {
+                .dsi_bus = dsi_bus_,
+                .dpi_config = &dpi_config,
+            },
         };
+
         esp_lcd_panel_dev_config_t panel_config = {};
         panel_config.reset_gpio_num = DISPLAY_RESET_PIN;
         panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
@@ -111,7 +134,7 @@ private:
         panel_config.vendor_config = &vendor_config;
 
         esp_lcd_panel_handle_t panel = nullptr;
-        ESP_ERROR_CHECK(esp_lcd_new_panel_ek79007(panel_io, &panel_config, &panel));
+        ESP_ERROR_CHECK(esp_lcd_new_panel_jd9165(panel_io, &panel_config, &panel));
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
         ESP_ERROR_CHECK(esp_lcd_dpi_panel_enable_dma2d(panel));
 #endif
@@ -121,8 +144,10 @@ private:
         display_ = new MipiLcdDisplay(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT,
                                       DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X,
                                       DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
+        ESP_LOGI(TAG, "Дисплей JD9165 1024x600 инициализирован");
     }
 
+    /* ---------- Кнопка BOOT ---------- */
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
             auto& app = Application::GetInstance();
@@ -134,23 +159,22 @@ private:
         });
     }
 
+    /* ---------- Тач GT911 ---------- */
     void InitializeTouch() {
         esp_lcd_touch_config_t touch_config = {
             .x_max = DISPLAY_WIDTH,
             .y_max = DISPLAY_HEIGHT,
             .rst_gpio_num = TOUCH_RST_GPIO,
             .int_gpio_num = TOUCH_INT_GPIO,
-            .levels =
-                {
-                    .reset = 0,
-                    .interrupt = 0,
-                },
-            .flags =
-                {
-                    .swap_xy = 0,
-                    .mirror_x = 0,
-                    .mirror_y = 0,
-                },
+            .levels = {
+                .reset = 0,
+                .interrupt = 0,
+            },
+            .flags = {
+                .swap_xy = 0,
+                .mirror_x = 0,
+                .mirror_y = 0,
+            },
         };
         esp_lcd_panel_io_i2c_config_t touch_io_config = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
         touch_io_config.scl_speed_hz = 400000;
@@ -160,7 +184,7 @@ private:
 
         lv_display_t* lv_display = lv_display_get_default();
         if (lv_display == nullptr) {
-            ESP_LOGE(TAG, "Cannot register touch input without an LVGL display");
+            ESP_LOGE(TAG, "Нет LVGL-дисплея — тач не зарегистрирован");
             return;
         }
         const lvgl_port_touch_cfg_t lv_touch_config = {
@@ -169,12 +193,15 @@ private:
         };
         touch_indev_ = lvgl_port_add_touch(&lv_touch_config);
         if (touch_indev_ == nullptr) {
-            ESP_LOGE(TAG, "Failed to register GT911 touch input");
+            ESP_LOGE(TAG, "Не удалось зарегистрировать GT911");
+        } else {
+            ESP_LOGI(TAG, "Тач GT911 зарегистрирован");
         }
     }
 
+    /* ---------- SD-карта (опционально; конфликт с C6 Wi-Fi) ---------- */
     void InitializeSdCard() {
-        ESP_LOGI(TAG, "Initializing SD card (may conflict with C6 Wi-Fi)");
+        ESP_LOGI(TAG, "Инициализация SD (может конфликтовать с Wi-Fi C6)");
 
         sdmmc_host_t host = SDMMC_HOST_DEFAULT();
         host.slot = SDMMC_HOST_SLOT_0;
@@ -196,32 +223,33 @@ private:
         };
         esp_err_t ret = sd_pwr_ctrl_new_on_chip_ldo(&power_config, &sd_power_);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to enable SD card power: %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "Питание SD не включено: %s", esp_err_to_name(ret));
             return;
         }
         host.pwr_ctrl_handle = sd_power_;
 
         ret = esp_vfs_fat_sdmmc_mount(SD_CARD_MOUNT_POINT, &host, &slot, &mount_config, &sd_card_);
         if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "SD card not mounted (OK if Wi-Fi is primary): %s", esp_err_to_name(ret));
+            ESP_LOGW(TAG, "SD не смонтирована (нормально, если основной канал — Wi-Fi): %s",
+                     esp_err_to_name(ret));
             sd_pwr_ctrl_del_on_chip_ldo(sd_power_);
             sd_power_ = nullptr;
         } else {
             sd_card_mounted_ = true;
-            ESP_LOGI(TAG, "SD card mounted successfully");
+            ESP_LOGI(TAG, "SD-карта смонтирована");
         }
     }
 
+    /* ---------- Камера MIPI-CSI ---------- */
     void InitializeCamera() {
-        ESP_LOGI(TAG, "Initializing MIPI-CSI camera");
+        ESP_LOGI(TAG, "Инициализация камеры MIPI-CSI");
 
         esp_video_init_csi_config_t csi_config = {
-            .sccb_config =
-                {
-                    .init_sccb = false,
-                    .i2c_handle = codec_i2c_bus_,
-                    .freq = 400000,
-                },
+            .sccb_config = {
+                .init_sccb = false,
+                .i2c_handle = codec_i2c_bus_,
+                .freq = 400000,
+            },
             .reset_pin = CAMERA_RESET_PIN,
             .pwdn_pin = CAMERA_PWDN_PIN,
         };
@@ -238,7 +266,7 @@ private:
         if (current_theme != nullptr) {
             auto text_font = current_theme->text_font();
             if (text_font != nullptr && text_font->font() != nullptr) {
-                ESP_LOGI(TAG, "Custom font loaded: line_height=%d",
+                ESP_LOGI(TAG, "Шрифт загружен: line_height=%d",
                          text_font->font()->line_height);
             }
         }
@@ -254,6 +282,7 @@ public:
         InitializeCamera();
         InitializeFonts();
         GetBacklight()->RestoreBrightness();
+        ESP_LOGI(TAG, "Плата Guition JC1060P470C готова");
     }
 
     ~GuitionJC1060P470Board() {
