@@ -1,10 +1,19 @@
 {
+    "manufacturer": "guition",
     "type": "guition-jc1060p470",
     "target": "esp32p4",
     "builds": [
         {
             "name": "guition-jc1060p470",
-            "sdkconfig_append": []
+            "sdkconfig_append": [
+                "CONFIG_SLAVE_IDF_TARGET_ESP32C6=y",
+                "CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y",
+                "CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y",
+                "CONFIG_SPI_FLASH_SUPPORT_GD_CHIP=y",
+                "CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y",
+                "CONFIG_ESP32P4_REV_MIN_100=y",
+                "CONFIG_SPIRAM_XIP_FROM_PSRAM=y"
+            ]
         }
     ]
 }
