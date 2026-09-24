@@ -1,1 +1,5 @@
-PLACEHOLDER
+menu "Xiaozhi Assistant"
+
+config OTA_URL
+    string "Default OTA URL"
+    default "https://api.tenclass.net/xiaozhi/ota/"
