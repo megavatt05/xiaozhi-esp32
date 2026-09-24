@@ -105,11 +105,16 @@ private:
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_dbi(dsi_bus_, &dbi_config, &panel_io));
 
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
         esp_lcd_dpi_panel_config_t dpi_config =
             JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(LCD_COLOR_PIXEL_FORMAT_RGB565);
         dpi_config.num_fbs = 1;
-#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
         dpi_config.flags.use_dma2d = true;
+#else
+        // IDF 6+: color format field renamed (in_color_format)
+        esp_lcd_dpi_panel_config_t dpi_config =
+            JD9165_1024_600_PANEL_60HZ_DPI_CONFIG_CF(LCD_COLOR_FMT_RGB565);
+        dpi_config.num_fbs = 1;
 #endif
 
         jd9165_vendor_config_t vendor_config = {
