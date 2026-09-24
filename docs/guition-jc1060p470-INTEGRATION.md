@@ -1,60 +1,53 @@
-# Guition JC1060P470C — интеграция в xiaozhi-esp32
+# Guition JC1060P470C — интеграция (ESP32-P4 **v1.3**)
 
-Ветка: `feature/guition-jc1060p470`
+Ветка: `feature/guition-jc1060p470`  
 Репозиторий: https://github.com/megavatt05/xiaozhi-esp32
 
 ## Уже в ветке
 
-- `main/boards/guition-jc1060p470/config.h` — пины (JD9165, GT911, ES8311)
-- `main/boards/guition-jc1060p470/guition-jc1060p470.cc` — board class
-- `main/boards/guition-jc1060p470/README.md`
-- `main/boards/guition-jc1060p470/config.json`
+| Путь | Описание |
+|------|----------|
+| `main/boards/guition-jc1060p470/config.h` | Пины + пометка v1.3 |
+| `main/boards/guition-jc1060p470/guition-jc1060p470.cc` | Board class |
+| `main/boards/guition-jc1060p470/config.json` | `CONFIG_ESP32P4_SELECTS_REV_LESS_V3`, `REV_MIN_100` |
+| `sdkconfig.defaults.esp32p4` | Eng sample defaults |
+| `main/boards/guition-jc1060p470/patches/*` | Патчи Kconfig/CMake + `APPLY.sh` |
 
-## Нужно добавить в Kconfig / CMake (если ещё нет)
+## ESP32-P4 v1.3 (engineering sample)
 
-### main/Kconfig.projbuild
-
-После `BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD`:
+Обязательные флаги (уже в `sdkconfig.defaults.esp32p4` и `config.json`):
 
 ```
-    config BOARD_TYPE_GUITION_JC1060P470
-        bool "Guition JC1060P470C 7\" (ESP32-P4 + C6, JD9165, GT911)"
-        depends on IDF_TARGET_ESP32P4
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+CONFIG_PARTITION_TABLE_OFFSET=0x10000
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 ```
 
-### main/CMakeLists.txt
+Без `SELECTS_REV_LESS_V3` / `REV_MIN_100` на v1.0/v1.3 возможен **Illegal Instruction**.
 
-После блока ESP32_P4_FUNCTION_EV_BOARD:
+## Восстановление полных Kconfig / CMakeLists
 
-```cmake
-elseif(CONFIG_BOARD_TYPE_GUITION_JC1060P470)
-    set(BOARD_DIR "guition-jc1060p470")
-    set(BUILTIN_TEXT_FONT font_noto_sans_basic_30_4)
-    set(BUILTIN_ICON_FONT font_material_symbols_30_4)
-    set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
+На ветке эти файлы могли быть усечены. Восстановление одной командой:
+
+```bash
+bash main/boards/guition-jc1060p470/patches/APPLY.sh
 ```
 
-И в блоке sdmmc:
+Скрипт:
+1. `git checkout main -- main/Kconfig.projbuild main/CMakeLists.txt`
+2. Накладывает патчи Guition (опция платы, BOARD_DIR, sdmmc)
 
-```cmake
-if(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD OR CONFIG_BOARD_TYPE_GUITION_JC1060P470)
-    list(APPEND MAIN_PRIV_REQUIRES_EXTRA
-        esp_driver_sdmmc
-        sdmmc
-    )
-endif()
-```
-
-Готовые файлы также лежат в артефактах проекта:
+Полные готовые файлы также в артефактах проекта:
 - `Kconfig.projbuild.guition`
 - `CMakeLists.txt.guition`
 
-## Сборка
+## Сборка (IDF 5.5.x)
 
 ```bash
 git clone -b feature/guition-jc1060p470 https://github.com/megavatt05/xiaozhi-esp32.git
 cd xiaozhi-esp32
-# применить патчи Kconfig/CMake из docs или artifacts
+bash main/boards/guition-jc1060p470/patches/APPLY.sh
 idf.py set-target esp32p4
 idf.py add-dependency "espressif/esp_lcd_jd9165^1.0.3"
 idf.py menuconfig   # Board Type → Guition JC1060P470C
