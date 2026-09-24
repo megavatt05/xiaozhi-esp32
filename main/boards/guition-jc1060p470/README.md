@@ -78,4 +78,18 @@ idf.py -p PORT flash monitor
 
 - https://github.com/guitionofficial/P4-series  
 - https://github.com/megavatt05/P4-series  
-- waveshare/esp32-p4-wifi6-touch-lcd (API reference)  
+- waveshare/esp32-p4-wifi6-touch-lcd (API reference)
+
+## Build note: ESP-IDF 6.0.2 + esp_lvgl_port
+
+If build fails with:
+`esp_lcd_dpi_panel_event_callbacks_t has no member named on_frame_buf_complete`
+
+run after `idf.py reconfigure` / first failed build:
+
+```powershell
+powershell -File scripts/fix_esp_lvgl_port_idf602.ps1
+idf.py build
+```
+
+(IDF 6.0.2 still uses `on_refresh_done`; `on_frame_buf_complete` appears in newer IDF.)
