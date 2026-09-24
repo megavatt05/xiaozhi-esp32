@@ -57,6 +57,11 @@ dependencies:
     rules:
     - if: target not in [esp32]
   espressif/esp_lcd_st77922: ^2.0.2
+  # Guition JC1060P470C 7" MIPI-DSI panel (ESP32-P4)
+  espressif/esp_lcd_jd9165:
+    version: "^1.0.3"
+    rules:
+    - if: target in [esp32p4]
   espressif/esp_lcd_touch_ft5x06: ^1.1.1
   espressif/esp_lcd_touch_gt911: ^1.2.1
   espressif/esp_lcd_touch_gt1151: ^1.1.1
