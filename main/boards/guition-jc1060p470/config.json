@@ -1,19 +1,21 @@
 {
-  "board": "guition-jc1060p470",
+  "manufacturer": "guition",
+  "type": "jc1060p470",
   "name": "Guition JC1060P470C",
   "target": "esp32p4",
-  "display": {
-    "controller": "JD9165",
-    "width": 1024,
-    "height": 600,
-    "interface": "MIPI-DSI"
-  },
-  "touch": "GT911",
-  "audio": "ES8311",
-  "wifi": "ESP32-C6 hosted",
-  "notes": [
-    "ESP32-P4 engineering sample rev 1.0/1.3",
-    "SDIO shared between TF card and C6",
-    "LDO ch3 2.5V for MIPI DSI PHY"
+  "builds": [
+    {
+      "name": "guition-jc1060p470c",
+      "sdkconfig_append": [
+        "CONFIG_SLAVE_IDF_TARGET_ESP32C6=y",
+        "CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y",
+        "CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y",
+        "CONFIG_SPI_FLASH_SUPPORT_GD_CHIP=y",
+        "CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y",
+        "CONFIG_ESP32P4_REV_MIN_100=y",
+        "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y",
+        "CONFIG_PARTITION_TABLE_OFFSET=0x10000"
+      ]
+    }
   ]
 }
