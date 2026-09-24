@@ -1,0 +1,23 @@
+--- a/main/CMakeLists.txt
++++ b/main/CMakeLists.txt
+@@ -572,6 +572,11 @@
+     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
+ elseif(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD)
+     set(BOARD_DIR "espressif/esp32-p4-function-ev-board")
++elseif(CONFIG_BOARD_TYPE_GUITION_JC1060P470)
++    set(BOARD_DIR "guition-jc1060p470")
++    set(BUILTIN_TEXT_FONT font_noto_sans_basic_30_4)
++    set(BUILTIN_ICON_FONT font_material_symbols_30_4)
++    set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
+ elseif(CONFIG_BOARD_TYPE_ESP32_S31_FUNCTION_COREBOARD_1)
+     set(BOARD_DIR "espressif/esp32-s31-function-coreboard-1")
+ elseif(CONFIG_BOARD_TYPE_ESP32_S31_KORVO_1)
+@@ -1082,7 +1087,7 @@
+         espressif__touch_button_sensor
+     )
+ endif()
+-if(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD)
++if(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD OR CONFIG_BOARD_TYPE_GUITION_JC1060P470)
+     list(APPEND MAIN_PRIV_REQUIRES_EXTRA
+         esp_driver_sdmmc
+         sdmmc

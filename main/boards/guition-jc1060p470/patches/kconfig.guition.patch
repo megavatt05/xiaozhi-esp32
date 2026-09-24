@@ -1,0 +1,21 @@
+--- a/main/Kconfig.projbuild
++++ b/main/Kconfig.projbuild
+@@ -128,7 +128,7 @@
+     default BOARD_TYPE_ESP_SENSAIRSHUTTLE if IDF_TARGET_ESP32C5
+     default BOARD_TYPE_WAVESHARE_ESP32_C6_TOUCH_AMOLED_2_06 if IDF_TARGET_ESP32C6
+     default BOARD_TYPE_BREAD_COMPACT_WIFI if IDF_TARGET_ESP32S3
+-    default BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD if IDF_TARGET_ESP32P4
++    default BOARD_TYPE_GUITION_JC1060P470 if IDF_TARGET_ESP32P4
+     default BOARD_TYPE_ESP32_S31_FUNCTION_COREBOARD_1 if IDF_TARGET_ESP32S31
+     help
+         Select the physical board hardware implementation.
+@@ -197,6 +197,9 @@
+     config BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD
+         bool "Espressif ESP32-P4/P4X-Function-EV-Board"
+         depends on IDF_TARGET_ESP32P4
++    config BOARD_TYPE_GUITION_JC1060P470
++        bool "Guition JC1060P470C 7\" (ESP32-P4 + C6, JD9165, GT911)"
++        depends on IDF_TARGET_ESP32P4
+     config BOARD_TYPE_ESP32_S3_BOX
+         bool "Espressif ESP32-S3-BOX"
+         depends on IDF_TARGET_ESP32S3
