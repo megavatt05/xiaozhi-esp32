@@ -105,16 +105,40 @@ private:
         };
         ESP_ERROR_CHECK(esp_lcd_new_panel_io_dbi(dsi_bus_, &dbi_config, &panel_io));
 
+// Manual init: IDF 6.0.x requires designated-initializer field order
+        // matching esp_lcd_dpi_panel_config_t (virtual_channel first).
+        // Component macro JD9165_*_DPI_CONFIG*_CF uses a different order.
+        esp_lcd_dpi_panel_config_t dpi_config = {};
+        dpi_config.virtual_channel = 0;
+        dpi_config.dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT;
+        dpi_config.dpi_clock_freq_mhz = 50;
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
-        esp_lcd_dpi_panel_config_t dpi_config =
-            JD9165_1024_600_PANEL_60HZ_DPI_CONFIG(LCD_COLOR_PIXEL_FORMAT_RGB565);
+        dpi_config.pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB565;
         dpi_config.num_fbs = 1;
+        dpi_config.video_timing = {
+            .h_size = 1024,
+            .v_size = 600,
+            .hsync_back_porch = 136,
+            .hsync_pulse_width = 20,
+            .hsync_front_porch = 160,
+            .vsync_back_porch = 12,
+            .vsync_pulse_width = 2,
+            .vsync_front_porch = 20,
+        };
         dpi_config.flags.use_dma2d = true;
 #else
-        // IDF 6+: color format field renamed (in_color_format)
-        esp_lcd_dpi_panel_config_t dpi_config =
-            JD9165_1024_600_PANEL_60HZ_DPI_CONFIG_CF(LCD_COLOR_FMT_RGB565);
+        dpi_config.in_color_format = LCD_COLOR_FMT_RGB565;
         dpi_config.num_fbs = 1;
+        dpi_config.video_timing = {
+            .h_size = 1024,
+            .v_size = 600,
+            .hsync_back_porch = 136,
+            .hsync_pulse_width = 20,
+            .hsync_front_porch = 160,
+            .vsync_back_porch = 12,
+            .vsync_pulse_width = 2,
+            .vsync_front_porch = 20,
+        };
 #endif
 
         jd9165_vendor_config_t vendor_config = {
