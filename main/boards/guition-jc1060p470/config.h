@@ -3,7 +3,12 @@
 
 #include <driver/gpio.h>
 
-/* GUITION JC1060P470C_I_W / _Y — pins from official Guition P4-series demo */
+/*
+ * GUITION JC1060P470C_I_W / _Y
+ * ESP32-P4 engineering sample: revision 1.0 / **1.3**
+ * Require: CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y, CONFIG_ESP32P4_REV_MIN_100=y
+ * Pins from official Guition P4-series demo
+ */
 
 #define AUDIO_INPUT_SAMPLE_RATE  24000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
