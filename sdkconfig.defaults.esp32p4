@@ -1,17 +1,16 @@
 CONFIG_IDF_TARGET="esp32p4"
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
-CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# Размер флеша (16 МБ), таблица разделов (partitions/v2/16m.csv, offset 0x8000)
+# уже заданы в общем sdkconfig.defaults — здесь дублировать не нужно.
 
-# --- Guition JC1060P470C (default board for this fork) ---
+# --- Guition JC1060P470C (плата по умолчанию в этом форке) ---
 CONFIG_BOARD_TYPE_GUITION_JC1060P470=y
 
-# ESP32-P4 engineering sample rev 1.0 / 1.3 (JC1060P470C)
+# ESP32-P4 engineering sample rev 1.0 / 1.3 (JC1060P470C).
+# Без этих двух строк на v1.0/v1.3 прошивка не загрузится (Illegal Instruction);
+# REV_MIN_100 разрешает флеш 80 МГц (при REV_MIN_0 дефолт — 40 МГц).
 CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
 CONFIG_ESP32P4_REV_MIN_100=y
-
-CONFIG_PARTITION_TABLE_OFFSET=0x8000
-CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions/v2/16m.csv"
 
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_SPEED_200M=y
@@ -26,14 +25,14 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_SPIRAM_MEMTEST=n
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 
-# Wi-Fi via ESP32-C6 (ESP-Hosted SDIO)
+# Wi-Fi через ESP32-C6 (ESP-Hosted, SDIO)
 CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
 CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
 CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
 
 CONFIG_SPI_FLASH_SUPPORT_GD_CHIP=y
 
-# --- Audio / Speech (ES8311 on Guition + AFE wake word) ---
+# --- Аудио/речь (ES8311 на Guition + AFE wake word) ---
 CONFIG_USE_AFE_WAKE_WORD=y
 CONFIG_SEND_WAKE_WORD_DATA=y
 CONFIG_USE_AUDIO_PROCESSOR=y

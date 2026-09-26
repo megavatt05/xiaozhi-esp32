@@ -5,11 +5,18 @@
 
 /*
  * GUITION JC1060P470C_I_W / _Y
- * ESP32-P4 engineering sample: revision 1.0 / **1.3**
- * Require: CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y, CONFIG_ESP32P4_REV_MIN_100=y
- * Pins from official Guition P4-series demo
+ * ESP32-P4 engineering sample: ревизия 1.0 / **1.3**
+ *
+ * Требуемые опции sdkconfig (уже заданы в sdkconfig.defaults.esp32p4):
+ *   CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+ *   CONFIG_ESP32P4_REV_MIN_100=y
+ * Без них на eng sample (v1.0/v1.3) прошивка не загрузится (Illegal Instruction).
+ *
+ * Пины — из официального порта xiaozhi-esp32 от Guition
+ * (guitionofficial/P4-series) и сверены с их Arduino-демо.
  */
 
+// --- Аудио: ES8311, I2S дуплекс, 24 кГц (стандарт текущих плат xiaozhi) ---
 #define AUDIO_INPUT_SAMPLE_RATE  24000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 #define AUDIO_INPUT_REFERENCE    true
@@ -26,8 +33,17 @@
 #define AUDIO_CODEC_I2C_PORT     I2C_NUM_0
 #define AUDIO_CODEC_ES8311_ADDR  ES8311_CODEC_DEFAULT_ADDR
 
+/*
+ * Кнопка BOOT — GPIO35.
+ * GPIO34..38 — strapping-пины ESP32-P4 (документация IDF); GPIO35 —
+ * стандартная кнопка BOOT для модулей P4.
+ * ВНИМАНИЕ: в вендорском шаблоне Guition BOOT=GPIO21 — это ошибка шаблона:
+ * GPIO21 реально занят прерыванием тача (см. ниже), кнопка и INT не могут
+ * делить один вывод.
+ */
 #define BOOT_BUTTON_GPIO         GPIO_NUM_35
 
+// --- Дисплей: 7" IPS 1024x600, JD9165, MIPI-DSI 2 lane ---
 #define DISPLAY_WIDTH            1024
 #define DISPLAY_HEIGHT           600
 #define DISPLAY_RESET_PIN        GPIO_NUM_27
@@ -40,17 +56,15 @@
 #define DISPLAY_OFFSET_Y         0
 
 #define LCD_MIPI_DSI_LANE_NUM          2
-#define LCD_MIPI_DSI_LANE_BITRATE_MBPS 900
+#define LCD_MIPI_DSI_LANE_BITRATE_MBPS 750   // проверено на железе (вендор: 900; при чёрном экране пробуйте 550/750/900)
+#define LCD_DPI_CLOCK_MHZ              52    // проверено на железе (макрос компонента: 50)
+
+// Питание MIPI-DSI PHY — LDO канал 3, 2500 мВ, включать ДО инициализации
 #define MIPI_DSI_PHY_PWR_LDO_CHAN      3
 #define MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV 2500
 
+// --- Тач: GT911 на общей с ES8311 шине I2C (SDA=7, SCL=8) ---
 #define TOUCH_RST_GPIO           GPIO_NUM_22
 #define TOUCH_INT_GPIO           GPIO_NUM_21
-
-#define CAMERA_RESET_PIN         GPIO_NUM_NC
-#define CAMERA_PWDN_PIN          GPIO_NUM_NC
-
-#define SD_CARD_PWR_LDO_CHAN     4
-#define SD_CARD_MOUNT_POINT      "/sdcard"
 
 #endif /* _BOARD_CONFIG_H_ */
