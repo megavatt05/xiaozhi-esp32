@@ -9,6 +9,7 @@
 
 #include "application.h"
 #include "application/app_state_machine.h"
+#include "application/cam_rx_task.h"
 
 #define TAG "main"
 
@@ -30,6 +31,12 @@ extern "C" void app_main(void)
     jc1060p470::AppStateMachine app_state_machine;
     if (!app_state_machine.Start()) {
         ESP_LOGE(TAG, "Failed to start JC1060P470 application state machine");
+        return;
+    }
+
+    jc1060p470::CamRxTask cam_rx_task;
+    if (!cam_rx_task.Start(&app_state_machine)) {
+        ESP_LOGE(TAG, "Failed to start JC1060P470 camera RX task");
         return;
     }
 
