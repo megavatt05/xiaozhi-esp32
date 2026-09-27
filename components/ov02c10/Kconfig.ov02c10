@@ -1,5 +1,6 @@
 menuconfig CAMERA_OV02C10
     bool "OV02C10"
+    depends on IDF_TARGET_ESP32P4
     default n
     help
         Enabling this option will add the support for OV02C10.
