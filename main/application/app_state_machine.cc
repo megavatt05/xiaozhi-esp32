@@ -74,7 +74,6 @@ AppState AppStateMachine::GetState() const {
 
 void AppStateMachine::TaskEntry(void* arg) {
     static_cast<AppStateMachine*>(arg)->TaskLoop();
-    vTaskDelete(nullptr);
 }
 
 void AppStateMachine::TaskLoop() {
