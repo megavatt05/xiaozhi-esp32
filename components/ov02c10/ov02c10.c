@@ -1675,7 +1675,7 @@ static esp_err_t ov02c10_set_para_value(esp_cam_sensor_device_t *dev, uint32_t i
      esp_err_t ret = ESP_OK;
  
      if (dev->xclk_pin >= 0) {
-         OV02C10_ENABLE_OUT_CLOCK(dev->xclk_pin, dev->xclk_freq_hz);
+         OV02C10_ENABLE_OUT_CLOCK(dev->xclk_pin, dev->cur_format->xclk);
      }
  
      if (dev->pwdn_pin >= 0) {
