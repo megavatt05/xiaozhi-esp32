@@ -12,8 +12,18 @@
  *   CONFIG_ESP32P4_REV_MIN_100=y
  * Без них на eng sample (v1.0/v1.3) прошивка не загрузится (Illegal Instruction).
  *
- * Пины — из официального порта xiaozhi-esp32 от Guition
- * (guitionofficial/P4-series) и сверены с их Arduino-демо.
+ * Аудио-пины сверены со СХЕМОЙ JC1060P470C_I_W_Y-V1.0 (5-Schematic
+ * вендорского пакета guitionofficial/P4-series) и с рабочим BSP
+ * ESP32P4-JC1060P470C-I_W_Y (ветка esp_brookesia_phone, звук подтверждён
+ * на железе):
+ *   ES8311 ASDOUT (данные микрофона) -> GPIO48 (сеть "ES7210_SDOUT" —
+ *     унаследованное имя от ESP32-P4-Function-EV-Board, физически это
+ *     выход АЦП самой ES8311; отдельного чипа ES7210 на плате НЕТ,
+ *     блок ADC&AEC содержит только аналоговый микрофон MSM381A);
+ *   PA_CTRL (STD усилителя NS4150, активный HIGH, R19 10K pull-down) -> GPIO11.
+ * Прежние значения DIN=GPIO11/PA=GPIO20 были перепутаны местами:
+ *   DIN=11 читал линию PA (pull-down -> постоянный ноль => "запись тишины",
+ *   wake word не срабатывал), PA=20 ни к чему не подключён.
  */
 
 // --- Аудио: ES8311, I2S дуплекс, 24 кГц (стандарт текущих плат xiaozhi) ---
@@ -25,9 +35,9 @@
 #define AUDIO_I2S_GPIO_WS   GPIO_NUM_10
 #define AUDIO_I2S_GPIO_BCLK GPIO_NUM_12
 #define AUDIO_I2S_GPIO_DOUT GPIO_NUM_9
-#define AUDIO_I2S_GPIO_DIN  GPIO_NUM_11
+#define AUDIO_I2S_GPIO_DIN  GPIO_NUM_48  // ES8311 ASDOUT (микрофон), см. схему
 
-#define AUDIO_CODEC_PA_PIN       GPIO_NUM_20
+#define AUDIO_CODEC_PA_PIN       GPIO_NUM_11  // PA_CTRL -> STD NS4150
 #define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_7
 #define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_8
 #define AUDIO_CODEC_I2C_PORT     I2C_NUM_0
