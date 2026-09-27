@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 
 #include "application.h"
+#include "application/app_state_machine.h"
 
 #define TAG "main"
 
@@ -25,5 +26,12 @@ extern "C" void app_main(void)
     // Initialize and run the application
     auto& app = Application::GetInstance();
     app.Initialize();
+
+    jc1060p470::AppStateMachine app_state_machine;
+    if (!app_state_machine.Start()) {
+        ESP_LOGE(TAG, "Failed to start JC1060P470 application state machine");
+        return;
+    }
+
     app.Run();  // This function runs the main event loop and never returns
 }
