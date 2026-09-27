@@ -29,6 +29,15 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
 CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
 CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+# Пул буферов SDIO-транспорта (~31 блок x 1536 б = ~48 КБ непрерывной
+# internal DMA RAM) выделять из DMA-capable PSRAM: на P4 GDMA достаёт
+# PSRAM через cache. Без этого после LVGL/аудио esp_hosted не находит
+# непрерывный кусок internal RAM и падает:
+#   assert failed: sdio_mempool_create sdio_drv.c:258 (buf_mp_g)
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
+
+# Флеш на этой плате — Boya (иначе предупреждение в логе и generic-драйвер)
+CONFIG_SPI_FLASH_SUPPORT_BOYA_CHIP=y
 
 CONFIG_SPI_FLASH_SUPPORT_GD_CHIP=y
 
