@@ -186,11 +186,11 @@ private:
         dpi_config.video_timing = {
             .h_size = DISPLAY_WIDTH,
             .v_size = DISPLAY_HEIGHT,
-            .hsync_back_porch = 160,
             .hsync_pulse_width = 24,
+            .hsync_back_porch = 160,
             .hsync_front_porch = 160,
-            .vsync_back_porch = 21,
             .vsync_pulse_width = 2,
+            .vsync_back_porch = 21,
             .vsync_front_porch = 12,
         };
         dpi_config.flags.use_dma2d = true;
@@ -200,11 +200,11 @@ private:
         dpi_config.video_timing = {
             .h_size = DISPLAY_WIDTH,
             .v_size = DISPLAY_HEIGHT,
-            .hsync_back_porch = 160,
             .hsync_pulse_width = 24,
+            .hsync_back_porch = 160,
             .hsync_front_porch = 160,
-            .vsync_back_porch = 21,
             .vsync_pulse_width = 2,
+            .vsync_back_porch = 21,
             .vsync_front_porch = 12,
         };
 #endif
