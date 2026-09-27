@@ -35,11 +35,44 @@
 #include <esp_ldo_regulator.h>
 #include <esp_log.h>
 #include <esp_lvgl_port.h>
+#include <esp_timer.h>
 
 #include "esp_lcd_jd9165.h"
 #include "esp_lcd_touch_gt911.h"
 
 #define TAG "GuitionJC1060P470"
+
+/*
+ * Диагностика тача (временно, можно удалить после отладки).
+ * Обёртка над read_data: логирует физическое касание (не чаще 1 раза в
+ * 300 мс) с сырыми координатами GT911. Трактовка:
+ *   - строк нет при касании  → события не доходят до прошивки (шина/драйвер);
+ *   - строки есть, координаты вне 0..1023 / 0..599 или зеркальные
+ *                            → проблема калибровки GT911, а не LVGL;
+ *   - строки есть, координаты адекватные, но UI не реагирует
+ *                            → LVGL-слой (indev) или программная логика.
+ */
+static esp_err_t (*s_orig_touch_read_data)(esp_lcd_touch_handle_t) = nullptr;
+static int64_t s_last_touch_log_us = 0;
+
+static esp_err_t TouchReadDataLog(esp_lcd_touch_handle_t tp) {
+    if (s_orig_touch_read_data == nullptr) {
+        return ESP_OK;
+    }
+    esp_err_t err = s_orig_touch_read_data(tp);
+    if (err == ESP_OK && tp->data.points > 0) {
+        int64_t now = esp_timer_get_time();
+        if (now - s_last_touch_log_us > 300000) {
+            s_last_touch_log_us = now;
+            ESP_LOGI(TAG, "ТАЧ: точек=%u x=%u y=%u (сила=%u)",
+                     (unsigned)tp->data.points,
+                     (unsigned)tp->data.coords[0].x,
+                     (unsigned)tp->data.coords[0].y,
+                     (unsigned)tp->data.coords[0].strength);
+        }
+    }
+    return err;
+}
 
 /*
  * Таблица инициализации JD9165 от вендора (Guition).
@@ -253,7 +286,42 @@ private:
         });
     }
 
+    // Диагностика: перечислить все устройства, отвечающие на шине I2C.
+    // Вызывается, если GT911 не найден — чтобы по логу сразу было видно,
+    // жива ли шина вообще (ES8311=0x18, GT911=0x5D/0x14, RTC RX8130=0x32).
+    void ScanI2cBus() {
+        std::string found;
+        for (uint16_t a = 0x03; a <= 0x77; ++a) {
+            if (i2c_master_probe(codec_i2c_bus_, a, 20) == ESP_OK) {
+                char buf[8];
+                snprintf(buf, sizeof(buf), " 0x%02X", (unsigned)a);
+                found += buf;
+            }
+        }
+        ESP_LOGW(TAG, "I2C scan (SDA=%d SCL=%d):%s", AUDIO_CODEC_I2C_SDA_PIN,
+                 AUDIO_CODEC_I2C_SCL_PIN, found.empty() ? " НИ ОДНОГО УСТРОЙСТВА" : found.c_str());
+    }
+
     void InitializeTouch() {
+        // GT911 отвечает на 0x5D или 0x14: адрес прошивается уровнем INT во
+        // время сброса, и на разных партиях JC1060P470 чип просыпается на
+        // разных адресах. Поэтому сначала probe по «сырой» шине, и только
+        // потом инициализация по адресу, который реально ответил.
+        const uint8_t gt_addrs[] = { ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS,         // 0x5D
+                                     ESP_LCD_TOUCH_IO_I2C_GT911_ADDRESS_BACKUP };// 0x14
+        uint8_t gt_addr = 0;
+        for (uint8_t a : gt_addrs) {
+            if (i2c_master_probe(codec_i2c_bus_, a, 100) == ESP_OK) {
+                gt_addr = a;
+                break;
+            }
+        }
+        if (gt_addr == 0) {
+            ScanI2cBus();
+            ESP_LOGE(TAG, "GT911 не отвечает ни на 0x5D, ни на 0x14 — продолжаем БЕЗ тача");
+            return; // намеренно без abort: устройство остаётся голосовым ассистентом
+        }
+
         // Ориентация GT911: для этой панели 1024x600 вендор использует
         // mirror_x=1, mirror_y=1 (см. порт Guition; swap_xy=0)
         esp_lcd_touch_config_t touch_config = {
@@ -271,13 +339,64 @@ private:
                 .mirror_y = 1,
             },
         };
-        // GT911: адрес из макроса по умолчанию (0x5D), 400 кГц — как на
-        // платах Waveshare P4; шина общая с ES8311
         esp_lcd_panel_io_i2c_config_t touch_io_config = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
+        touch_io_config.dev_addr = gt_addr;
         touch_io_config.scl_speed_hz = 400000;
 
-        ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(codec_i2c_bus_, &touch_io_config, &touch_io_));
-        ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(touch_io_, &touch_config, &tp_));
+        // Две попытки инициализации — ПОРЯДОК ВАЖЕН (проверено на живом логе):
+        //  1) БЕЗ reset-пинов: probe только что подтвердил, что чип жив и
+        //     отвечает на найденном адресе. Сброс здесь только вредит: без
+        //     driver_data драйвер выполняет урезанный reset (RST 10+10 мс)
+        //     БЕЗ задержки на запуск чипа, и первая же транзакция попадает в
+        //     его перезагрузку — отсюда 0x108 в первом логе.
+        //  2) С reset-танцем (RST=22, INT=21) и передачей driver_data:
+        //     драйвер выставит адрес уровнем INT и выдержит полный тайминг
+        //     (10+1+10+50 мс) — запасной путь для реально «зависшего» чипа.
+        static esp_lcd_touch_io_gt911_config_t gt911_io_cfg = {}; // static: драйвер хранит указатель
+        struct TouchAttempt { gpio_num_t rst; gpio_num_t int_gpio; };
+        const TouchAttempt attempts[] = {
+            { GPIO_NUM_NC,    GPIO_NUM_NC    }, // чип уже жив — не сбрасываем
+            { TOUCH_RST_GPIO, TOUCH_INT_GPIO }, // полный reset-танец по datasheet
+        };
+        esp_err_t err = ESP_FAIL;
+        for (const TouchAttempt& at : attempts) {
+            touch_config.rst_gpio_num = at.rst;
+            touch_config.int_gpio_num = at.int_gpio;
+            if (at.rst != GPIO_NUM_NC) {
+                gt911_io_cfg.dev_addr = gt_addr;
+                touch_config.driver_data = &gt911_io_cfg;
+            } else {
+                touch_config.driver_data = nullptr;
+            }
+            if (touch_io_ != nullptr) {
+                esp_lcd_panel_io_del(touch_io_);
+                touch_io_ = nullptr;
+            }
+            err = esp_lcd_new_panel_io_i2c(codec_i2c_bus_, &touch_io_config, &touch_io_);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "panel_io_i2c (addr 0x%02X): 0x%x", gt_addr, err);
+                continue;
+            }
+            // при ошибке esp_lcd_touch_new_i2c_gt911 сам удаляет свой handle
+            err = esp_lcd_touch_new_i2c_gt911(touch_io_, &touch_config, &tp_);
+            if (err == ESP_OK) {
+                break;
+            }
+            ESP_LOGW(TAG, "GT911 init (addr 0x%02X, rst=%d): 0x%x", gt_addr, (int)at.rst, err);
+        }
+        if (err != ESP_OK || tp_ == nullptr) {
+            if (touch_io_ != nullptr) {
+                esp_lcd_panel_io_del(touch_io_);
+                touch_io_ = nullptr;
+            }
+            ESP_LOGE(TAG, "GT911 не инициализировался — продолжаем БЕЗ тача");
+            return; // намеренно без abort
+        }
+        ESP_LOGI(TAG, "GT911 инициализирован (адрес 0x%02X)", gt_addr);
+
+        // Диагностика: перехватываем read_data, чтобы видеть касания в логе
+        s_orig_touch_read_data = tp_->read_data;
+        tp_->read_data = TouchReadDataLog;
 
         // Тач нужно привязать к уже созданному LVGL-дисплею
         lv_display_t* lv_display = lv_display_get_default();
