@@ -39,6 +39,7 @@
 
 #include "esp_lcd_jd9165.h"
 #include "esp_lcd_touch_gt911.h"
+#include "esp_video.h"
 
 #define TAG "GuitionJC1060P470"
 
@@ -145,6 +146,7 @@ private:
     esp_lcd_touch_handle_t tp_ = nullptr;
     esp_lcd_panel_io_handle_t touch_io_ = nullptr;
     lv_indev_t* touch_indev_ = nullptr;
+    Camera* camera_ = nullptr;
 
     // Единая шина I2C: ES8311 (аудио) + GT911 (тач), пины см. config.h
     void InitializeI2cBus() {
@@ -311,6 +313,33 @@ private:
                  AUDIO_CODEC_I2C_SCL_PIN, found.empty() ? " НИ ОДНОГО УСТРОЙСТВА" : found.c_str());
     }
 
+    void InitializeCamera() {
+        ESP_LOGI(TAG, "Инициализация камеры OV02C10 (MIPI-CSI)");
+
+        esp_video_init_csi_config_t csi_config = {
+            .sccb_config =
+                {
+                    .init_sccb = false,
+                    .i2c_handle = codec_i2c_bus_,
+                    .freq = 400000,
+                },
+            .reset_pin = GPIO_NUM_NC,
+            .pwdn_pin = GPIO_NUM_NC,
+        };
+
+        esp_video_init_config_t video_config = {
+            .csi = &csi_config,
+        };
+
+        camera_ = new EspVideo(video_config);
+        if (camera_ == nullptr) {
+            ESP_LOGE(TAG, "Не удалось создать EspVideo");
+            return;
+        }
+
+        ESP_LOGI(TAG, "EspVideo для OV02C10 создан");
+    }
+
     void InitializeTouch() {
         // GT911 отвечает на 0x5D или 0x14: адрес прошивается уровнем INT во
         // время сброса, и на разных партиях JC1060P470 чип просыпается на
@@ -431,12 +460,15 @@ public:
         InitializeLcd();
         InitializeButtons();
         InitializeTouch();
+        InitializeCamera();
         GetBacklight()->RestoreBrightness();
         ESP_LOGI(TAG, "Плата Guition JC1060P470C готова");
     }
 
     ~GuitionJC1060P470Board() {
         // Разборка в порядке, обратном созданию
+        delete camera_;
+        camera_ = nullptr;
         if (touch_indev_ != nullptr) {
             lvgl_port_remove_touch(touch_indev_);
             touch_indev_ = nullptr;
@@ -497,9 +529,7 @@ public:
         return &backlight;
     }
 
-    // Камеры на плате нет: MIPI-CSI интерфейс продукта не распаян под сенсор
-    // (вендорские демо используют USB UVC-камеру) — GetCamera() из базового
-    // класса вернёт nullptr, приложение штатно отключит функцию камеры.
+    virtual Camera* GetCamera() override { return camera_; }
 };
 
 DECLARE_BOARD(GuitionJC1060P470Board);
