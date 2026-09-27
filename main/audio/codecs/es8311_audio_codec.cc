@@ -4,7 +4,10 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <cstdio>
+
 #define TAG "Es8311AudioCodec"
+#define DIAG_TAG "AudioDiag"
 
 Es8311AudioCodec::Es8311AudioCodec(void* i2c_master_handle, i2c_port_t i2c_port, int input_sample_rate, int output_sample_rate,
     gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din,
@@ -101,6 +104,14 @@ void Es8311AudioCodec::UpdateDeviceState() {
         ESP_ERROR_CHECK(esp_codec_dev_open(dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(dev_, input_gain_));
         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(dev_, output_volume_));
+        // Однократный дамп после первого открытия: здесь регистры отражают
+        // РЕАЛЬНОЕ рабочее состояние (ADC/DAC/PA), а не сброс. Если микрофон
+        // «пишет тишину» или звука нет — сравниваем с ориентирами в
+        // LogDiagnostics() и присылаем этот кусок лога.
+        if (!diag_logged_) {
+            diag_logged_ = true;
+            LogDiagnostics();
+        }
     } else if (!input_enabled_ && !output_enabled_ && dev_ != nullptr) {
         ESP_ERROR_CHECK(esp_codec_dev_close(dev_));
         esp_codec_dev_delete(dev_);
@@ -131,9 +142,9 @@ void Es8311AudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gp
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2    
-				.ext_clk_freq_hz = 0,
-			#endif
+                        #ifdef   I2S_HW_VERSION_2    
+                                .ext_clk_freq_hz = 0,
+                        #endif
         },
         .slot_cfg = {
             .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
@@ -214,4 +225,74 @@ int Es8311AudioCodec::Write(const int16_t* data, int samples) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_write(dev_, (void*)data, samples * sizeof(int16_t)));
     }
     return samples;
+}
+
+void Es8311AudioCodec::LogDiagnostics() {
+    // Чтение регистра через control-интерфейс esp_codec_dev. Сигнатура
+    // (self, reg, reg_len, data, data_len) — та же, что у write_reg в
+    // ResetCodec(). Возврат 0 = ESP_OK. Никаких abort: диагностика должна
+    // работать даже на «полумёртвой» шине.
+    auto read_reg = [this](int reg, uint8_t* val) -> bool {
+        return ctrl_if_ != nullptr && ctrl_if_->read_reg(ctrl_if_, reg, 1, val, 1) == 0;
+    };
+
+    ESP_LOGI(DIAG_TAG, "=== Состояние кодека ===");
+    ESP_LOGI(DIAG_TAG, "ввод=%d вывод=%d громкость=%d усиление_вх=%d dev_open=%s",
+             (int)input_enabled_, (int)output_enabled_, output_volume_, input_gain_,
+             dev_ != nullptr ? "да" : "нет");
+    if (pa_pin_ != GPIO_NUM_NC) {
+        int level = gpio_get_level(pa_pin_);
+        ESP_LOGI(DIAG_TAG, "PA: GPIO%d уровень=%d (активный %s)", (int)pa_pin_, level,
+                 pa_inverted_ ? "LOW" : "HIGH");
+        if (output_enabled_ && !pa_inverted_ && level == 0) {
+            ESP_LOGW(DIAG_TAG, "вывод включён, но PA=0 — усилитель ВЫКЛЮЧЕН (пин/полярность?)");
+        }
+    }
+    if (codec_if_ == nullptr) {
+        ESP_LOGE(DIAG_TAG, "codec_if не создан — ES8311 не инициализирован");
+        return;
+    }
+
+    // Полный дамп 0x00..0x49 (аналог es8311_register_dump из esp-bsp,
+    // но через ctrl_if). 8 регистров в строке; '--' = ошибка чтения.
+    ESP_LOGI(DIAG_TAG, "ES8311 регистры 0x00..0x49:");
+    for (int base = 0x00; base < 0x4A; base += 8) {
+        char line[48];
+        int n = snprintf(line, sizeof(line), "  ");
+        for (int r = base; r < base + 8 && r < 0x4A; ++r) {
+            uint8_t v = 0;
+            if (read_reg(r, &v)) {
+                n += snprintf(line + n, sizeof(line) - n, "%02x ", v);
+            } else {
+                n += snprintf(line + n, sizeof(line) - n, "-- ");
+            }
+        }
+        ESP_LOGI(DIAG_TAG, "0x%02X:%s", base, line);
+    }
+
+    // Ключевые регистры с ориентирами штатной инициализации esp_codec_dev
+    // (могут отличаться по битам clock-конфига; смысл — заметить ГРУБОЕ
+    // отклонение: мьют, выключенный блок, нулевая громкость).
+    static const struct { int reg; const char* desc; } keys[] = {
+        {0x0D, "аналоговые HP-драйверы (ориентир 0x01)"},
+        {0x0E, "PGA/модулятор АЦП — микрофон (ориентир 0x02)"},
+        {0x12, "ЦАП (ориентир 0x00 = включён)"},
+        {0x13, "выходной каскад HP (ориентир 0x10)"},
+        {0x17, "усиление АЦП (старший ниббл, шаг PGA)"},
+        {0x31, "мьют ЦАП (биты 5..6 = 0x60 — замьючен!)"},
+        {0x32, "громкость ЦАП (0x00 = тишина, растёт с громкостью)"},
+    };
+    ESP_LOGI(DIAG_TAG, "=== Ключевые регистры ===");
+    for (const auto& k : keys) {
+        uint8_t v = 0;
+        if (read_reg(k.reg, &v)) {
+            ESP_LOGI(DIAG_TAG, "REG 0x%02X = 0x%02X  %s", k.reg, v, k.desc);
+        } else {
+            ESP_LOGE(DIAG_TAG, "REG 0x%02X = НЕ ЧИТАЕТСЯ  %s", k.reg, k.desc);
+        }
+    }
+    uint8_t mute_reg = 0;
+    if (read_reg(0x31, &mute_reg) && (mute_reg & 0x60)) {
+        ESP_LOGW(DIAG_TAG, "ЦАП замьючен программно (0x31=0x%02X, биты 0x60): громкость или mute-логика", mute_reg);
+    }
 }

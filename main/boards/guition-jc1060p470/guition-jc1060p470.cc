@@ -6,7 +6,7 @@
  *    - ESP32-P4 (engineering sample v1.0 / v1.3) + ESP32-C6 (Wi-Fi 6, ESP-Hosted)
  *    - Дисплей: 7" IPS 1024x600, JD9165, MIPI-DSI 2 lane
  *    - Тач: GT911 (I2C, шина общая с ES8311)
- *    - Аудио: ES8311 + усилитель (PA на GPIO20)
+ *    - Аудио: ES8311 (единый дуплексный кодек) + NS4150, PA на GPIO11
  *
  *  Источник пинов и команд панели: официальный порт xiaozhi-esp32 от Guition
  *  (guitionofficial/P4-series, плата guition-jc1060p470). Тайминги DPI и
@@ -284,6 +284,15 @@ private:
             }
             app.ToggleChatState();
         });
+        // Долгое нажатие BOOT — диагностика звука (по образцу диагностики
+        // тача): полный скан шины + состояние/регистры ES8311 в текущий
+        // момент. Особенно полезно ВО ВРЕМЯ диалога (кодек открыт —
+        // регистры отражают реальную работу ADC/DAC/PA).
+        boot_button_.OnLongPress([this]() {
+            ESP_LOGW(TAG, "=== ДИАГНОСТИКА АУДИО (долгое нажатие BOOT) ===");
+            ScanI2cBus();
+            static_cast<Es8311AudioCodec*>(GetAudioCodec())->LogDiagnostics();
+        });
     }
 
     // Диагностика: перечислить все устройства, отвечающие на шине I2C.
@@ -455,7 +464,24 @@ public:
     }
 
     virtual AudioCodec* GetAudioCodec() override {
-        // use_mclk=true, pa_inverted=false (значения по умолчанию — явно)
+        // Диагностика: ES8311 обязан отвечать на шине ДО создания кодека.
+        // Нет ответа на 0x18/0x19 (ADSEL) — проблема I2C/питания кодека,
+        // а не I2S: дальше диагностикой регистров не между.
+        uint8_t es_addr = 0;
+        for (uint8_t a : {AUDIO_CODEC_ES8311_ADDR, (uint8_t)(AUDIO_CODEC_ES8311_ADDR + 1)}) {
+            if (i2c_master_probe(codec_i2c_bus_, a, 100) == ESP_OK) {
+                es_addr = a;
+                break;
+            }
+        }
+        if (es_addr == 0) {
+            ESP_LOGE(TAG, "ES8311 НЕ отвечает на 0x18/0x19 — кодек на шине мёртв (проверьте питание/I2C, не I2S)");
+        } else {
+            ESP_LOGI(TAG, "ES8311 отвечает на 0x%02X", es_addr);
+        }
+        // use_mclk=true, pa_inverted=false (значения по умолчанию — явно).
+        // Если звук появится, но усилитель окажется инверсный — поменять
+        // последний параметр на true (PA_CTRL: STD NS4150, активный HIGH).
         static Es8311AudioCodec audio_codec(
             codec_i2c_bus_, AUDIO_CODEC_I2C_PORT, AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT,

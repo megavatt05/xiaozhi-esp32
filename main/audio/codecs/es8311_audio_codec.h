@@ -20,6 +20,7 @@ private:
     esp_codec_dev_handle_t dev_ = nullptr;
     gpio_num_t pa_pin_ = GPIO_NUM_NC;
     bool pa_inverted_ = false;
+    bool diag_logged_ = false; // однократный дамп после первого открытия кодека
     std::mutex data_if_mutex_;
 
     void CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din);
@@ -38,6 +39,12 @@ public:
     virtual void SetOutputVolume(int volume) override;
     virtual void EnableInput(bool enable) override;
     virtual void EnableOutput(bool enable) override;
+
+    // Диагностика: состояние кодека + дамп регистров ES8311 (0x00..0x49)
+    // через ctrl_if (esp_codec_dev), без низкоуровневого es8311_handle_t.
+    // Не блокирует мьютекс: вызывать ВНЕ переходов вкл/выкл ввода-вывода
+    // (внутри UpdateDeviceState можно). Только для отладки.
+    void LogDiagnostics();
 };
 
 #endif // _ES8311_AUDIO_CODEC_H
