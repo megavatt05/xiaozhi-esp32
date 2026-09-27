@@ -99,6 +99,8 @@ void AppStateMachine::HandleEvent(const AppEvent& event) {
 
         case AppState::WaitCamera:
             if (event.type == AppEventType::CameraReady) {
+                ESP_LOGI(TAG, "Camera is ready; waiting for prompt detection");
+            } else if (event.type == AppEventType::PromptDetected) {
                 TransitionTo(AppState::PromptDetected);
             }
             break;
