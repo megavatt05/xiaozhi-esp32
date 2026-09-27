@@ -1,5 +1,6 @@
 # Define source files
 set(SOURCES "application/app_state_machine.cc"
+            "application/cam_rx_task.cc"
             "audio/audio_codec.cc"
             "audio/audio_debugger.cc"
             "audio/audio_service.cc"
