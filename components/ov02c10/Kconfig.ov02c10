@@ -45,6 +45,15 @@ if CAMERA_OV02C10
         bool "CSI line sync enable"
         default y
 
+    config CAMERA_OV02C10_ISP_AF_ENABLE
+        bool "ISP autofocus / VCM support"
+        default y
+
+    config CAMERA_OV02C10_MAX_SUPPORT
+        int "Maximum OV02C10 sensor instances"
+        default 1
+        range 1 4
+
     config CAMERA_OV02C10_ABSOLUTE_GAIN_LIMIT
         int "Maximum absolute gain limit"
         default 66016
