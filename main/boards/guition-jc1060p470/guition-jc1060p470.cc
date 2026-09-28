@@ -173,12 +173,45 @@ private:
     }
 
     void InitializeCamera() {
-        ESP_LOGI(TAG,"Инициализация камеры OV02C10 (MIPI-CSI)");
-        esp_video_init_csi_config_t csi_config={.sccb_config={.init_sccb=false,.i2c_handle=codec_i2c_bus_,.freq=400000},.reset_pin=GPIO_NUM_NC,.pwdn_pin=GPIO_NUM_NC};
-        esp_video_init_config_t video_config={.csi=&csi_config};
-        camera_=new EspVideo(video_config);
-        if(camera_==nullptr){ESP_LOGE(TAG,"Не удалось создать EspVideo");return;}
-        ESP_LOGI(TAG,"EspVideo для OV02C10 создан");
+        ESP_LOGI(TAG, "=== ИНИЦИАЛИЗАЦИЯ КАМЕРЫ OV02C10 ===");
+        ESP_LOGI(TAG, "CSI SCCB: I2C port=%d SDA=%d SCL=%d freq=400kHz",
+                 AUDIO_CODEC_I2C_PORT, AUDIO_CODEC_I2C_SDA_PIN, AUDIO_CODEC_I2C_SCL_PIN);
+
+        // OV02C10 использует 7-bit SCCB address 0x36.
+        // esp_video создаёт SCCB device именно как 7-bit I2C address.
+        const esp_err_t probe_ov02c10 = i2c_master_probe(codec_i2c_bus_, 0x36, 100);
+        if (probe_ov02c10 == ESP_OK) {
+            ESP_LOGI(TAG, "OV02C10 ACK на SCCB/I2C 0x36 — сенсор физически доступен");
+        } else {
+            ESP_LOGE(TAG, "OV02C10 НЕ отвечает на SCCB/I2C 0x36 (err=0x%x)", probe_ov02c10);
+            ESP_LOGE(TAG, "Пока 0x36 не отвечает, esp_video не сможет обнаружить OV02C10");
+            ScanI2cBus();
+        }
+
+        // Важно: передача уже созданной I2C-шины в esp_video корректна.
+        // Для MIPI-CSI esp_video сам создаёт SCCB device и вызывает
+        // ESP_CAM_SENSOR_DETECT_FN для зарегистрированных сенсоров.
+        esp_video_init_csi_config_t csi_config = {
+            .sccb_config = {
+                .init_sccb = false,
+                .i2c_handle = codec_i2c_bus_,
+                .freq = 400000,
+            },
+            .reset_pin = GPIO_NUM_NC,
+            .pwdn_pin = GPIO_NUM_NC,
+        };
+
+        esp_video_init_config_t video_config = {
+            .csi = &csi_config,
+        };
+
+        camera_ = new EspVideo(video_config);
+        if (camera_ == nullptr) {
+            ESP_LOGE(TAG, "Не удалось создать EspVideo для OV02C10");
+            return;
+        }
+
+        ESP_LOGI(TAG, "EspVideo для OV02C10 создан; ожидаем регистрацию /dev/video*");
     }
 
     void InitializeTouch() {
@@ -203,8 +236,23 @@ public:
     virtual AudioCodec* GetAudioCodec() override {
         uint8_t es_addr=0;
         for(uint8_t a:{static_cast<uint8_t>(AUDIO_CODEC_ES8311_ADDR),static_cast<uint8_t>(AUDIO_CODEC_ES8311_ADDR+1)}) { if(i2c_master_probe(codec_i2c_bus_,a,100)==ESP_OK){es_addr=a;break;} }
-        if(es_addr==0)ESP_LOGE(TAG,"ES8311 НЕ отвечает на 0x18/0x19 — кодек на шине мёртв (проверьте питание/I2C, не I2S)");else ESP_LOGI(TAG,"ES8311 отвечает на 0x%02X",es_addr);
-        static Es8311AudioCodec audio_codec(codec_i2c_bus_,AUDIO_CODEC_I2C_PORT,AUDIO_INPUT_SAMPLE_RATE,AUDIO_OUTPUT_SAMPLE_RATE,AUDIO_I2S_GPIO_MCLK,AUDIO_I2S_GPIO_BCLK,AUDIO_I2S_GPIO_WS,AUDIO_I2S_GPIO_DOUT,AUDIO_I2S_GPIO_DIN,AUDIO_CODEC_PA_PIN,AUDIO_CODEC_ES8311_ADDR,true,false);
+        if(es_addr==0) {
+            ESP_LOGE(TAG, "ES8311 НЕ отвечает на 7-bit 0x%02X/0x%02X",
+                     (unsigned)AUDIO_CODEC_ES8311_ADDR,
+                     (unsigned)AUDIO_CODEC_ES8311_ADDR + 1);
+            ScanI2cBus();
+        } else {
+            ESP_LOGI(TAG, "ES8311 отвечает на 7-bit I2C 0x%02X", es_addr);
+        }
+
+        // Не подменяем адрес в драйвере автоматически: ES8311 codec driver
+        // должен получать именно 7-bit address, заданный board config.
+        static Es8311AudioCodec audio_codec(
+            codec_i2c_bus_, AUDIO_CODEC_I2C_PORT,
+            AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
+            AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS,
+            AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
+            AUDIO_CODEC_PA_PIN, AUDIO_CODEC_ES8311_ADDR, true, false);
         return &audio_codec;
     }
     virtual Display* GetDisplay() override{return display_;}
