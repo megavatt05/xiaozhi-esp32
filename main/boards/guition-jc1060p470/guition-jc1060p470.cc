@@ -264,19 +264,27 @@ public:
     GuitionJC1060P470Board():boot_button_(BOOT_BUTTON_GPIO){InitializeI2cBus();InitializeLcd();InitializeButtons();InitializeTouch();InitializeCamera();GetBacklight()->RestoreBrightness();ESP_LOGI(TAG,"Плата Guition JC1060P470C готова");}
     ~GuitionJC1060P470Board(){delete camera_;camera_=nullptr;if(touch_indev_!=nullptr){lvgl_port_remove_touch(touch_indev_);touch_indev_=nullptr;}if(tp_!=nullptr){esp_lcd_touch_del(tp_);tp_=nullptr;}if(touch_io_!=nullptr){esp_lcd_panel_io_del(touch_io_);touch_io_=nullptr;}delete display_;display_=nullptr;if(dsi_bus_!=nullptr){esp_lcd_del_dsi_bus(dsi_bus_);dsi_bus_=nullptr;}if(dsi_phy_power_!=nullptr){esp_ldo_release_channel(dsi_phy_power_);dsi_phy_power_=nullptr;}}
     virtual AudioCodec* GetAudioCodec() override {
-        uint8_t es_addr=0;
-        for(uint8_t a:{static_cast<uint8_t>(AUDIO_CODEC_ES8311_ADDR),static_cast<uint8_t>(AUDIO_CODEC_ES8311_ADDR+1)}) { if(i2c_master_probe(codec_i2c_bus_,a,100)==ESP_OK){es_addr=a;break;} }
-        if(es_addr==0) {
-            ESP_LOGE(TAG, "ES8311 НЕ отвечает на 7-bit 0x%02X/0x%02X",
-                     (unsigned)AUDIO_CODEC_ES8311_ADDR,
-                     (unsigned)AUDIO_CODEC_ES8311_ADDR + 1);
+        // i2c_master_probe() принимает 7-bit адрес, а esp_codec_dev 1.x
+        // хранит адрес ES8311 в 8-bit формате. Физический адрес платы = 0x18,
+        // адрес для audio_codec_i2c_cfg_t = 0x30.
+        constexpr uint8_t kEs8311PhysicalAddr =
+            static_cast<uint8_t>(AUDIO_CODEC_ES8311_ADDR >> 1);
+        if (i2c_master_probe(codec_i2c_bus_, kEs8311PhysicalAddr, 100) != ESP_OK) {
+            ESP_LOGE(TAG, "ES8311 НЕ отвечает на физический 7-bit I2C 0x%02X "
+                          "(codec addr=0x%02X)",
+                     (unsigned)kEs8311PhysicalAddr,
+                     (unsigned)AUDIO_CODEC_ES8311_ADDR);
             ScanI2cBus();
         } else {
-            ESP_LOGI(TAG, "ES8311 отвечает на 7-bit I2C 0x%02X", es_addr);
+            ESP_LOGI(TAG, "ES8311 отвечает: физический 7-bit I2C 0x%02X "
+                          "(esp_codec_dev addr=0x%02X)",
+                     (unsigned)kEs8311PhysicalAddr,
+                     (unsigned)AUDIO_CODEC_ES8311_ADDR);
         }
 
-        // Не подменяем адрес в драйвере автоматически: ES8311 codec driver
-        // должен получать именно 7-bit address, заданный board config.
+        // ВАЖНО: esp_codec_dev 1.x ожидает для ES8311 8-bit I2C address (0x30),
+        // несмотря на то что i2c_master_probe() и физическая шина используют
+        // 7-bit адрес 0x18.
         static Es8311AudioCodec audio_codec(
             codec_i2c_bus_, AUDIO_CODEC_I2C_PORT,
             AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
