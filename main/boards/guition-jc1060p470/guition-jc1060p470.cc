@@ -55,23 +55,53 @@
  */
 static esp_err_t (*s_orig_touch_read_data)(esp_lcd_touch_handle_t) = nullptr;
 static int64_t s_last_touch_log_us = 0;
+static int64_t s_last_touch_error_log_us = 0;
 
 static esp_err_t TouchReadDataLog(esp_lcd_touch_handle_t tp) {
     if (s_orig_touch_read_data == nullptr) {
         return ESP_OK;
     }
+
     esp_err_t err = s_orig_touch_read_data(tp);
-    if (err == ESP_OK && tp->data.points > 0) {
-        int64_t now = esp_timer_get_time();
-        if (now - s_last_touch_log_us > 300000) {
-            s_last_touch_log_us = now;
-            ESP_LOGI(TAG, "ТАЧ: точек=%u x=%u y=%u (сила=%u)",
-                     (unsigned)tp->data.points,
-                     (unsigned)tp->data.coords[0].x,
-                     (unsigned)tp->data.coords[0].y,
-                     (unsigned)tp->data.coords[0].strength);
+    if (err == ESP_OK) {
+        if (tp->data.points > 0) {
+            int64_t now = esp_timer_get_time();
+            if (now - s_last_touch_log_us > 300000) {
+                s_last_touch_log_us = now;
+                ESP_LOGI(TAG, "ТАЧ: точек=%u x=%u y=%u (сила=%u)",
+                         (unsigned)tp->data.points,
+                         (unsigned)tp->data.coords[0].x,
+                         (unsigned)tp->data.coords[0].y,
+                         (unsigned)tp->data.coords[0].strength);
+            }
         }
+        return ESP_OK;
     }
+
+    /*
+     * GT911 иногда возвращает ESP_ERR_INVALID_RESPONSE, когда в момент
+     * опроса нет валидного touch report / шина занята другим устройством.
+     *
+     * lvgl_port_touchpad_read() в esp_lvgl_port 2.x использует
+     * ESP_ERROR_CHECK(esp_lcd_touch_read_data()), поэтому возврат этой
+     * ошибки приводит не к потере одного touch sample, а к abort() всего
+     * приложения. Для HID-подобного polling это неправильное поведение.
+     *
+     * Превращаем INVALID_RESPONSE в "нет касания". Реальные I2C ошибки
+     * продолжаем возвращать наверх, чтобы они оставались диагностируемыми.
+     */
+    if (err == ESP_ERR_INVALID_RESPONSE) {
+        tp->data.points = 0;
+
+        int64_t now = esp_timer_get_time();
+        if (now - s_last_touch_error_log_us > 1000000) {
+            s_last_touch_error_log_us = now;
+            ESP_LOGW(TAG, "GT911: ESP_ERR_INVALID_RESPONSE при чтении — "
+                          "игнорируем один sample, LVGL не аварийно завершаем");
+        }
+        return ESP_OK;
+    }
+
     return err;
 }
 
