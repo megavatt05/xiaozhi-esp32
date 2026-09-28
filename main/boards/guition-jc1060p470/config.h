@@ -41,7 +41,7 @@
 #define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_7
 #define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_8
 #define AUDIO_CODEC_I2C_PORT     I2C_NUM_0
-#define AUDIO_CODEC_ES8311_ADDR  0x18  // ES8311 7-bit I2C address
+#define AUDIO_CODEC_ES8311_ADDR  0x30  // esp_codec_dev 1.x: 8-bit I2C address (physical 7-bit = 0x18)
 
 /*
  * Кнопка BOOT — GPIO35.
