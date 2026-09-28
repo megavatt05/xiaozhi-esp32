@@ -1758,11 +1758,25 @@ static esp_err_t ov02c10_set_para_value(esp_cam_sensor_device_t *dev, uint32_t i
  
  // We need manage these devices, and maybe need to add it into the private member of esp_device
  esp_cam_sensor_device_t *ov02c10_detect(esp_cam_sensor_config_t *config)
- {
+{
     esp_cam_sensor_device_t *dev = NULL;
     struct ov02c10_cam *cam_ov02c10;
     s_limited_gain_index = ARRAY_SIZE(ov02c10_total_gain_val_map);
+
     if (config == NULL) {
+        ESP_LOGE(TAG, "detect called with NULL config");
+        return NULL;
+    }
+
+    ESP_LOGI(TAG, "OV02C10 detector: SCCB handle=%p reset=%d pwdn=%d sensor_port=%d xclk_pin=%d",
+             config->sccb_handle,
+             (int)config->reset_pin,
+             (int)config->pwdn_pin,
+             (int)config->sensor_port,
+             (int)config->xclk_pin);
+
+    if (config->sccb_handle == NULL) {
+        ESP_LOGE(TAG, "OV02C10 detector: SCCB handle is NULL");
         return NULL;
     }
 
@@ -1799,18 +1813,21 @@ static esp_err_t ov02c10_set_para_value(esp_cam_sensor_device_t *dev, uint32_t i
 
     // Configure sensor power, clock, and SCCB port
     if (ov02c10_power_on(dev) != ESP_OK) {
-        ESP_LOGE(TAG, "Camera power on failed");
+        ESP_LOGE(TAG, "OV02C10 detector: camera power-on failed");
         goto err_free_handler;
     }
 
+    ESP_LOGI(TAG, "OV02C10 detector: reading chip ID from SCCB...");
     if (ov02c10_get_sensor_id(dev, &dev->id) != ESP_OK) {
-        ESP_LOGE(TAG, "Get sensor ID failed");
+        ESP_LOGE(TAG, "OV02C10 detector: chip ID read failed");
         goto err_free_handler;
     } else if (dev->id.pid != OV02C10_PID) {
-        ESP_LOGE(TAG, "Camera sensor is not OV02C10, PID=0x%x", dev->id.pid);
+        ESP_LOGE(TAG, "OV02C10 detector: unexpected PID=0x%x (expected 0x%04x)",
+                 dev->id.pid, OV02C10_PID);
         goto err_free_handler;
     }
-    ESP_LOGI(TAG, "Detected Camera sensor PID=0x%x", dev->id.pid);
+    ESP_LOGI(TAG, "OV02C10 detector: DETECTED PID=0x%04x at SCCB 0x%02x",
+             dev->id.pid, OV02C10_SCCB_ADDR);
 
     return dev;
 
