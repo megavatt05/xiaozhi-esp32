@@ -56,6 +56,10 @@ CONFIG_ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE=y
 CONFIG_ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE=n
 CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
 CONFIG_CAMERA_OV02C10=y
+# External OV02C10 compatibility driver registers through the esp_cam_sensor
+# detector linker section; force the dynamic detector-store mode so the
+# out-of-tree detector is actually visible to esp_video auto-detection.
+CONFIG_CAMERA_SENSOR_MOTOR_DETECT_METHOD_DYNAMIC_LINK=y
 CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
 
 CONFIG_LV_USE_SNAPSHOT=y
