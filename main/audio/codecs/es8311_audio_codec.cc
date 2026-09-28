@@ -101,13 +101,31 @@ void Es8311AudioCodec::UpdateDeviceState() {
             .sample_rate = (uint32_t)input_sample_rate_,
             .mclk_multiple = 0,
         };
-        ESP_ERROR_CHECK(esp_codec_dev_open(dev_, &fs));
-        ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(dev_, input_gain_));
-        ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(dev_, output_volume_));
+        esp_err_t err = esp_codec_dev_open(dev_, &fs);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "ES8311: esp_codec_dev_open failed: 0x%x", err);
+            ESP_LOGE(TAG, "ES8311: не аварийно завершаем приложение — оставляем камеру/CSI доступными");
+            esp_codec_dev_delete(dev_);
+            dev_ = nullptr;
+            if (pa_pin_ != GPIO_NUM_NC) {
+                gpio_set_level(pa_pin_, pa_inverted_ ? 1 : 0);
+            }
+            LogDiagnostics();
+            return;
+        }
+
+        err = esp_codec_dev_set_in_gain(dev_, input_gain_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "ES8311: set input gain failed: 0x%x", err);
+        }
+
+        err = esp_codec_dev_set_out_vol(dev_, output_volume_);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "ES8311: set output volume failed: 0x%x", err);
+        }
+
         // Однократный дамп после первого открытия: здесь регистры отражают
-        // РЕАЛЬНОЕ рабочее состояние (ADC/DAC/PA), а не сброс. Если микрофон
-        // «пишет тишину» или звука нет — сравниваем с ориентирами в
-        // LogDiagnostics() и присылаем этот кусок лога.
+        // РЕАЛЬНОЕ рабочее состояние (ADC/DAC/PA), а не сброс.
         if (!diag_logged_) {
             diag_logged_ = true;
             LogDiagnostics();
