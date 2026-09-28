@@ -3,6 +3,7 @@
 #include "board.h"
 #include "camera.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -48,6 +49,7 @@ void CamRxTask::TaskLoop() {
     ESP_LOGI(TAG, "Camera RX task started");
 
     bool camera_ready_reported = false;
+    int64_t last_capture_error_log_us = 0;
 
     while (true) {
         Camera* camera = Board::GetInstance().GetCamera();
@@ -69,8 +71,15 @@ void CamRxTask::TaskLoop() {
             // A future detector must post AppEventType::PromptDetected.
             vTaskDelay(pdMS_TO_TICKS(100));
         } else {
-            ESP_LOGW(TAG, "Camera capture failed; retrying");
-            vTaskDelay(pdMS_TO_TICKS(500));
+            // Пока /dev/video0 не создан, EspVideo::Capture() может возвращать
+            // ошибку на каждой попытке. Не превращаем это в бесконечный поток
+            // логов: продолжаем проверять камеру, но редко сообщаем об ошибке.
+            int64_t now_us = esp_timer_get_time();
+            if (now_us - last_capture_error_log_us >= 10000000) {
+                last_capture_error_log_us = now_us;
+                ESP_LOGW(TAG, "Camera capture failed; retrying (next retry in 5s)");
+            }
+            vTaskDelay(pdMS_TO_TICKS(5000));
         }
     }
 }
