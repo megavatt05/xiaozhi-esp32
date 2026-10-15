@@ -10,6 +10,9 @@
 #include <cstdio>
 #include <cstring>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
 #include "esp_imgfx_color_convert.h"
 #include "esp_video_device.h"
 #include "esp_video_init.h"
@@ -152,7 +155,13 @@ EspVideo::EspVideo(const esp_video_init_config_t& config) {
         return;
     }
 
-    video_fd_ = open(video_device_name, O_RDWR);
+    for (int retry = 0; retry < 10; ++retry) {
+        video_fd_ = open(video_device_name, O_RDWR);
+        if (video_fd_ >= 0) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 
     if (video_fd_ < 0) {
         ESP_LOGE(TAG, "open %s failed, errno=%d(%s)", video_device_name, errno, strerror(errno));
