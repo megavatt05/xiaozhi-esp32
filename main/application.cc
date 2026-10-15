@@ -65,6 +65,10 @@ void Application::Initialize() {
     // Setup the display
     auto display = board.GetDisplay();
     display->SetupUI();
+    auto& assets = Assets::GetInstance();
+    if (assets.partition_valid()) {
+        assets.Apply();
+    }
     // Print board name/version info
     display->SetChatMessage("system", SystemInfo::GetUserAgent().c_str());
 
