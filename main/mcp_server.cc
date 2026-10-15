@@ -59,6 +59,20 @@ void McpServer::AddCommonTools() {
                 return true;
             });
 
+    AddTool("self.audio_microphone.set_volume",
+            "Set the volume (gain) of the audio microphone. If the current volume is unknown, you "
+            "must call "
+            "`self.get_device_status` tool first and then call this tool.",
+            PropertyList({Property("volume", kPropertyTypeInteger, 0, 100)}),
+            [&board](const PropertyList& properties) -> ReturnValue {
+                auto codec = board.GetAudioCodec();
+                // 假设0-100的音量映射为相应的gain值，比如使用 0 到
+                // 100的范围，代码中很多地方默认是按浮点数设置，或者我们可以将0-100直接当做gain的输入。
+                // 需要确认一下SetInputGain接收的值范围。
+                codec->SetInputGain(properties["volume"].value<int>());
+                return true;
+            });
+
     auto backlight = board.GetBacklight();
     if (backlight) {
         AddTool("self.screen.set_brightness", "Set the brightness of the screen.",
