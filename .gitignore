@@ -18,3 +18,11 @@ main/mmap_generate_emoji.h
 *.bin
 mmap_generate_*.h
 .clangd
+
+# local build variants and agent/IDE state (this machine)
+build-guru/
+.agents/
+.kilo/
+__pycache__/
+sdkconfig.guru
+sdkconfig.*.bak
