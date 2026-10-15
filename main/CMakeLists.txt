@@ -22,6 +22,8 @@ set(SOURCES "application/app_state_machine.cc"
             "display/oled_display.cc"
             "display/lvgl_display/lvgl_display.cc"
             "display/emote_display.cc"
+            "display/emote_audio_settings.cc"
+            "display/lvgl_audio_settings.cc"
             "display/lvgl_display/emoji_collection.cc"
             "display/lvgl_display/lvgl_theme.cc"
             "display/lvgl_display/lvgl_font.cc"
@@ -575,10 +577,15 @@ elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_P4_WIFI6_TOUCH_LCD_10_1)
 elseif(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD)
     set(BOARD_DIR "espressif/esp32-p4-function-ev-board")
 elseif(CONFIG_BOARD_TYPE_GUITION_JC1060P470)
-    set(BOARD_DIR "guition-jc1060p470")
+    set(BOARD_DIR "guition/guition-jc1060p470")
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_30_4)
     set(BUILTIN_ICON_FONT font_material_symbols_30_4)
     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
+    set(EMOTE_RESOLUTION "1024_600")
+    # Noto instead of the pack's ALIPUHUI font: the emote labels have to draw
+    # Russian text, and font_puhui_* has no Cyrillic glyphs. 20 px keeps the
+    # line height inside the 40 px toast box of the 1024_600 layout.
+    set(GUITION_EMOTE_TEXT_FONT font_noto_sans_common_20_4)
 elseif(CONFIG_BOARD_TYPE_ESP32_S31_FUNCTION_COREBOARD_1)
     set(BOARD_DIR "espressif/esp32-s31-function-coreboard-1")
 elseif(CONFIG_BOARD_TYPE_ESP32_S31_KORVO_1)
@@ -1232,6 +1239,158 @@ if(CONFIG_BOARD_TYPE_ESP_VOCAT)
         )
     else()
         message(WARNING "esp_emote_assets component not found; ESP-VoCat custom emotes will be skipped")
+    endif()
+endif()
+
+# GUITION JC1060P470C with the emote (eyes) UI: expression_assets.bin is packed
+# out of the esp_emote_assets component, and two pieces of that pack are wrong
+# for this build:
+#   * wakenet/srmodels.bin holds "你好小伴", not our "你好小智" wake word
+#   * font_puhui_common_20_4 has no Cyrillic glyphs, so Russian text is blank
+# build_all.py resolves every asset through EMOTE_EXTERNAL_PATH first, so only
+# those two files plus the resolution folder are staged here; emoji_large keeps
+# coming from the component.
+if(CONFIG_BOARD_TYPE_GUITION_JC1060P470 AND CONFIG_USE_EMOTE_MESSAGE_STYLE)
+    find_component_by_pattern("esp_emote_assets" EMOTE_ASSETS_COMPONENT EMOTE_ASSETS_PATH)
+    if(EMOTE_ASSETS_PATH)
+        set(GUITION_EMOTE_ASSETS_STAGING "${CMAKE_BINARY_DIR}/guition-emote-assets")
+        file(REMOVE_RECURSE "${GUITION_EMOTE_ASSETS_STAGING}")
+        file(REMOVE
+            "${CMAKE_BINARY_DIR}/expression_assets.bin"
+            "${CMAKE_BINARY_DIR}/expression_assets.bin.validated"
+        )
+        file(MAKE_DIRECTORY "${GUITION_EMOTE_ASSETS_STAGING}/${EMOTE_RESOLUTION}")
+        file(MAKE_DIRECTORY "${GUITION_EMOTE_ASSETS_STAGING}/font")
+        file(MAKE_DIRECTORY "${GUITION_EMOTE_ASSETS_STAGING}/wakenet")
+
+        # build.py reads layout.json/emote.json from the resolution directory it
+        # is given, so the staged folder has to be complete on its own.
+        file(COPY "${EMOTE_ASSETS_PATH}/${EMOTE_RESOLUTION}/layout.json"
+             DESTINATION "${GUITION_EMOTE_ASSETS_STAGING}/${EMOTE_RESOLUTION}")
+        file(COPY "${EMOTE_ASSETS_PATH}/${EMOTE_RESOLUTION}/emote.json"
+             DESTINATION "${GUITION_EMOTE_ASSETS_STAGING}/${EMOTE_RESOLUTION}")
+        file(WRITE "${GUITION_EMOTE_ASSETS_STAGING}/${EMOTE_RESOLUTION}/config.json"
+"{
+    \"text_font\": \"${GUITION_EMOTE_TEXT_FONT}\",
+    \"emoji_collection\": \"emoji_large\",
+    \"wakenet_model\": \"srmodels.bin\"
+}
+")
+        file(COPY "${NOTO_FONTS_PATH}/cbin/${GUITION_EMOTE_TEXT_FONT}.bin"
+             DESTINATION "${GUITION_EMOTE_ASSETS_STAGING}/font")
+
+        set(EMOTE_EXTERNAL_PATH "${GUITION_EMOTE_ASSETS_STAGING}")
+
+        # Repack the wake word from sdkconfig with esp-sr's own packer, the same
+        # models the default asset path would ship. Done at configure time on
+        # purpose: build_all.py resolves every file as "external path first", so
+        # a build-time custom command races it and silently falls back to the
+        # component's srmodels.bin. sdkconfig is an input of the CMake
+        # reconfigure edge, so this stays in step with wake word changes.
+        set(GUITION_EMOTE_SRMODELS "${GUITION_EMOTE_ASSETS_STAGING}/wakenet/srmodels.bin")
+        set(GUITION_EMOTE_PYTHON "${Python3_EXECUTABLE}")
+        if(NOT GUITION_EMOTE_PYTHON)
+            set(GUITION_EMOTE_PYTHON "${PYTHON}")
+        endif()
+        if(NOT GUITION_EMOTE_PYTHON)
+            set(GUITION_EMOTE_PYTHON python)
+        endif()
+        set(GUITION_EMOTE_SRMODELS_LOG_OUT "${GUITION_EMOTE_ASSETS_STAGING}/srmodels-pack.log")
+        set(GUITION_EMOTE_SRMODELS_LOG_ERR "${GUITION_EMOTE_ASSETS_STAGING}/srmodels-pack.err.log")
+
+        # One command per execute_process: when several COMMANDs are chained, CMake
+        # pipes each one's stdout into the next, and the copy step started while
+        # python was still flushing — it lost with "Error copying file" against a
+        # srmodels.bin that movemodel.py had just written.
+        set(GUITION_EMOTE_SRMODELS_BUILD "${GUITION_EMOTE_ASSETS_STAGING}/srmodels-build")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E rm -rf "${GUITION_EMOTE_SRMODELS_BUILD}"
+        )
+
+        # UTF-8 mode (-X utf8) is passed to python directly instead of through
+        # `cmake -E env PYTHONIOENCODING=utf-8`: movemodel.py prints box-drawing
+        # characters and dies on the ASCII fallback encoding, and the env wrapper
+        # only adds another process between CMake and python. Output goes to files,
+        # not to *_VARIABLE, so the packing log survives whatever fails.
+        execute_process(
+            COMMAND ${GUITION_EMOTE_PYTHON} -X utf8 ${ESP_SR_MODEL_PATH}/movemodel.py
+                    -d1 "${SDKCONFIG}"
+                    -d2 "${ESP_SR_COMPONENT_PATH}"
+                    -d3 "${GUITION_EMOTE_SRMODELS_BUILD}"
+            RESULT_VARIABLE GUITION_EMOTE_SRMODELS_RESULT
+            OUTPUT_FILE "${GUITION_EMOTE_SRMODELS_LOG_OUT}"
+            ERROR_FILE "${GUITION_EMOTE_SRMODELS_LOG_ERR}"
+        )
+        if(NOT GUITION_EMOTE_SRMODELS_RESULT EQUAL 0)
+            message(WARNING "esp-sr model packing exited with ${GUITION_EMOTE_SRMODELS_RESULT}; "
+                            "see ${GUITION_EMOTE_SRMODELS_LOG_OUT}")
+        endif()
+
+        set(GUITION_EMOTE_SRMODELS_PACKED "${GUITION_EMOTE_SRMODELS_BUILD}/srmodels/srmodels.bin")
+        if(NOT EXISTS "${GUITION_EMOTE_SRMODELS_PACKED}")
+            file(READ "${GUITION_EMOTE_SRMODELS_LOG_OUT}" GUITION_EMOTE_SRMODELS_DIAG)
+            file(READ "${GUITION_EMOTE_SRMODELS_LOG_ERR}" GUITION_EMOTE_SRMODELS_DIAG_ERR)
+            message(FATAL_ERROR
+                "Could not pack esp-sr wake word models for the emote asset image "
+                "(sdkconfig=${SDKCONFIG}, esp-sr=${ESP_SR_COMPONENT_PATH}):\n"
+                "${GUITION_EMOTE_SRMODELS_DIAG}\n${GUITION_EMOTE_SRMODELS_DIAG_ERR}")
+        endif()
+        # file(COPY) runs in cmake itself, after python has fully exited.
+        file(COPY "${GUITION_EMOTE_SRMODELS_PACKED}"
+             DESTINATION "${GUITION_EMOTE_ASSETS_STAGING}/wakenet")
+        if(NOT EXISTS "${GUITION_EMOTE_SRMODELS}")
+            message(FATAL_ERROR
+                "Packed wake word models could not be staged into ${GUITION_EMOTE_SRMODELS}")
+        endif()
+
+        # ---- custom "wise guru" eye pack ------------------------------------------
+        # main/assets/emote-guru/ holds 11 animated clips in the native .eaf
+        # container plus the emote.json that binds them to the 20 xiaozhi emotion
+        # names. They are committed as built artifacts, not generated here: the
+        # python that ESP-IDF activates for the build has no numpy/Pillow, and a
+        # configure-time render would also cost a minute per reconfigure.
+        # Regenerate by hand with a numpy+Pillow python after editing guru_gen.py:
+        #     python main/assets/emote-guru/guru_gen.py \
+        #            --out main/assets/emote-guru/eyes --no-preview
+        # Each frame already contains BOTH eyes (the wink and the asymmetric
+        # thinking look need that), so the staged layout.json switches the
+        # engine's automatic mirroring off and centres the pair.
+        # build_all.py resolves the whole collection directory through the
+        # external path, so the stock .bin icons and listen.eaf are staged next
+        # to our clips to keep the collection complete.
+        set(GUITION_GURU_SRC "${CMAKE_CURRENT_SOURCE_DIR}/assets/emote-guru")
+        file(GLOB GUITION_GURU_EAF "${GUITION_GURU_SRC}/eyes/*.eaf")
+        list(LENGTH GUITION_GURU_EAF GUITION_GURU_EAF_COUNT)
+        if(EXISTS "${GUITION_GURU_SRC}/eyes/emote.json" AND GUITION_GURU_EAF_COUNT GREATER 0)
+            file(MAKE_DIRECTORY "${GUITION_EMOTE_ASSETS_STAGING}/emoji_large")
+            file(GLOB GUITION_STOCK_ICONS "${EMOTE_ASSETS_PATH}/emoji_large/*.bin"
+                                          "${EMOTE_ASSETS_PATH}/emoji_large/listen.eaf")
+            file(COPY ${GUITION_STOCK_ICONS} ${GUITION_GURU_EAF}
+                 DESTINATION "${GUITION_EMOTE_ASSETS_STAGING}/emoji_large")
+            file(COPY "${GUITION_GURU_SRC}/layout.json"
+                      "${GUITION_GURU_SRC}/eyes/emote.json"
+                 DESTINATION "${GUITION_EMOTE_ASSETS_STAGING}/${EMOTE_RESOLUTION}")
+            set(GUITION_EMOTE_EYES_DESC "custom guru pack (${GUITION_GURU_EAF_COUNT} clips)")
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                "${GUITION_GURU_SRC}/layout.json"
+                "${GUITION_GURU_SRC}/eyes/emote.json"
+            )
+        else()
+            set(GUITION_EMOTE_EYES_DESC "stock Espressif pack (guru assets missing)")
+            message(WARNING "No .eaf files in ${GUITION_GURU_SRC}/eyes - "
+                            "the stock Espressif emoji collection will be used")
+        endif()
+
+        message(STATUS "Emote asset overrides: font=${GUITION_EMOTE_TEXT_FONT}, "
+                       "wakenet=${GUITION_EMOTE_SRMODELS}, eyes=${GUITION_EMOTE_EYES_DESC}")
+
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+            "${EMOTE_ASSETS_PATH}/${EMOTE_RESOLUTION}/layout.json"
+            "${EMOTE_ASSETS_PATH}/${EMOTE_RESOLUTION}/emote.json"
+            "${NOTO_FONTS_PATH}/cbin/${GUITION_EMOTE_TEXT_FONT}.bin"
+        )
+    else()
+        message(WARNING "esp_emote_assets component not found; GUITION emote asset overrides will be skipped")
     endif()
 endif()
 

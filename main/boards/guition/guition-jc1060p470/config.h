@@ -27,21 +27,30 @@
  */
 
 // --- Аудио: ES8311, I2S дуплекс, 24 кГц (стандарт текущих плат xiaozhi) ---
-#define AUDIO_INPUT_SAMPLE_RATE  24000
+#define AUDIO_INPUT_SAMPLE_RATE 24000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
-#define AUDIO_INPUT_REFERENCE    true
+// Отдельной линии аппаратного возврата звука (loopback) на плате нет:
+// АЦП ES8311 один на 24 выводах ASDOUT. Поэтому Es8311AudioCodec реализует
+// опорный канал ПРОГРАММНО — копией уходящего в DMA воспроизведения, которую
+// Read() отдаёт вторым каналом [mic, ref]. Тот же приём уже используется
+// для плат esp32-s3-box-lite и nulllab-ai-vox-v3 (см. их *_audio_codec).
+// Эффект (AEC + full-duplex) требует CONFIG_USE_DEVICE_AEC=y.
+#define AUDIO_INPUT_REFERENCE true
+#define AUDIO_INPUT_GAIN \
+    42.0f  // Чувствительность микрофона: 42 дБ (макс в ES8311, шаг 6 дБ, по умолч. было 30)
 
 #define AUDIO_I2S_GPIO_MCLK GPIO_NUM_13
-#define AUDIO_I2S_GPIO_WS   GPIO_NUM_10
+#define AUDIO_I2S_GPIO_WS GPIO_NUM_10
 #define AUDIO_I2S_GPIO_BCLK GPIO_NUM_12
 #define AUDIO_I2S_GPIO_DOUT GPIO_NUM_9
-#define AUDIO_I2S_GPIO_DIN  GPIO_NUM_48  // ES8311 ASDOUT (микрофон), см. схему
+#define AUDIO_I2S_GPIO_DIN GPIO_NUM_48  // ES8311 ASDOUT (микрофон), см. схему
 
-#define AUDIO_CODEC_PA_PIN       GPIO_NUM_11  // PA_CTRL -> STD NS4150
-#define AUDIO_CODEC_I2C_SDA_PIN  GPIO_NUM_7
-#define AUDIO_CODEC_I2C_SCL_PIN  GPIO_NUM_8
-#define AUDIO_CODEC_I2C_PORT     I2C_NUM_0
-#define AUDIO_CODEC_ES8311_ADDR  0x30  // esp_codec_dev 1.x: 8-bit I2C address (physical 7-bit = 0x18)
+#define AUDIO_CODEC_PA_PIN GPIO_NUM_11  // PA_CTRL -> STD NS4150
+#define AUDIO_CODEC_I2C_SDA_PIN GPIO_NUM_7
+#define AUDIO_CODEC_I2C_SCL_PIN GPIO_NUM_8
+#define AUDIO_CODEC_I2C_PORT I2C_NUM_0
+#define AUDIO_CODEC_ES8311_ADDR \
+    0x30  // esp_codec_dev 1.x: 8-bit I2C address (physical 7-bit = 0x18)
 
 /*
  * Кнопка BOOT — GPIO35.
@@ -51,30 +60,33 @@
  * GPIO21 реально занят прерыванием тача (см. ниже), кнопка и INT не могут
  * делить один вывод.
  */
-#define BOOT_BUTTON_GPIO         GPIO_NUM_35
+#define BOOT_BUTTON_GPIO GPIO_NUM_35
 
 // --- Дисплей: 7" IPS 1024x600, JD9165, MIPI-DSI 2 lane ---
-#define DISPLAY_WIDTH            1024
-#define DISPLAY_HEIGHT           600
-#define DISPLAY_RESET_PIN        GPIO_NUM_27
-#define DISPLAY_BACKLIGHT_PIN    GPIO_NUM_23
+#define DISPLAY_WIDTH 1024
+#define DISPLAY_HEIGHT 600
+#define DISPLAY_RESET_PIN GPIO_NUM_27
+#define DISPLAY_BACKLIGHT_PIN GPIO_NUM_23
 #define DISPLAY_BACKLIGHT_OUTPUT_INVERT false
-#define DISPLAY_SWAP_XY          false
-#define DISPLAY_MIRROR_X         false
-#define DISPLAY_MIRROR_Y         false
-#define DISPLAY_OFFSET_X         0
-#define DISPLAY_OFFSET_Y         0
+#define DISPLAY_SWAP_XY false
+#define DISPLAY_MIRROR_X false
+#define DISPLAY_MIRROR_Y false
+#define DISPLAY_OFFSET_X 0
+#define DISPLAY_OFFSET_Y 0
 
-#define LCD_MIPI_DSI_LANE_NUM          2
-#define LCD_MIPI_DSI_LANE_BITRATE_MBPS 750   // проверено на железе (вендор: 900; при чёрном экране пробуйте 550/750/900)
-#define LCD_DPI_CLOCK_MHZ              52    // проверено на железе (макрос компонента: 50)
+#define LCD_MIPI_DSI_LANE_NUM 2
+#define LCD_MIPI_DSI_LANE_BITRATE_MBPS \
+    750  // проверено на железе (вендор: 900; при чёрном экране пробуйте 550/750/900)
+#define LCD_DPI_CLOCK_MHZ 52  // проверено на железе (макрос компонента: 50)
 
 // Питание MIPI-DSI PHY — LDO канал 3, 2500 мВ, включать ДО инициализации
-#define MIPI_DSI_PHY_PWR_LDO_CHAN      3
+#define MIPI_DSI_PHY_PWR_LDO_CHAN 3
 #define MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV 2500
 
 // --- Тач: GT911 на общей с ES8311 шине I2C (SDA=7, SCL=8) ---
-#define TOUCH_RST_GPIO           GPIO_NUM_22
-#define TOUCH_INT_GPIO           GPIO_NUM_21
+// На плате JC1060P470C вывод RST тача подключён к GPIO5.
+// INT не задействован / плавающий (GPIO_NUM_NC).
+#define TOUCH_RST_GPIO GPIO_NUM_5
+#define TOUCH_INT_GPIO GPIO_NUM_NC
 
 #endif /* _BOARD_CONFIG_H_ */

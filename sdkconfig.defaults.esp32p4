@@ -47,6 +47,10 @@ CONFIG_SEND_WAKE_WORD_DATA=y
 CONFIG_USE_AUDIO_PROCESSOR=y
 CONFIG_MODEL_IN_FLASH=y
 CONFIG_SR_WN_WN9_NIHAOXIAOZHI_TTS=y
+# Облегчённая версия того же слова пробуждения: оба модель-входа попадают в
+# srmodels.bin, что повышает recall. Раньше эта опция ставилась только руками
+# через menuconfig и терялась при пересоздании sdkconfig.
+CONFIG_SR_WN_WN9S_NIHAOXIAOZHI=y
 CONFIG_CODEC_ES8311_SUPPORT=y
 
 CONFIG_IDF_EXPERIMENTAL_FEATURES=y
@@ -56,6 +60,8 @@ CONFIG_ESP_VIDEO_ENABLE_MIPI_CSI_VIDEO_DEVICE=y
 CONFIG_ESP_VIDEO_ENABLE_DVP_VIDEO_DEVICE=n
 CONFIG_ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER=y
 CONFIG_CAMERA_OV02C10=y
+CONFIG_CAMERA_OV02C10_AUTO_DETECT=y
+CONFIG_CAMERA_OV02C10_AUTO_DETECT_MIPI_INTERFACE_SENSOR=y
 # External OV02C10 compatibility driver registers through the esp_cam_sensor
 # detector linker section; force the dynamic detector-store mode so the
 # out-of-tree detector is actually visible to esp_video auto-detection.
@@ -64,6 +70,29 @@ CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
 
 CONFIG_LV_USE_SNAPSHOT=y
 
-CONFIG_USE_WECHAT_MESSAGE_STYLE=n
-CONFIG_USE_DEFAULT_MESSAGE_STYLE=y
-CONFIG_LANGUAGE_ZH_CN=y
+# --- Эхоподавление / полный дуплекс ---
+# У ES8311 нет аппаратного возврата сигнала воспроизведения на АЦКП, поэтому
+# опорный канал синтезируется в софте Es8311AudioCodec (кольцо копии вывода,
+# BOARD_TYPE_GUITION_JC1060P470 добавлен в whitelist USE_DEVICE_AEC).
+# С включённым AEC слушание переходит в kListeningModeRealtime (full-duplex).
+CONFIG_USE_DEVICE_AEC=y
+
+# Глаза EmoteDisplay (esp_emote_gfx) + собственный набор «мудрый гуру»
+# (main/assets/emote-guru). Возврат к чату на LVGL 9 (MipiLcdDisplay, экран
+# настроек lvgl_audio_settings с lv_button/lv_slider):
+#   CONFIG_USE_WECHAT_MESSAGE_STYLE=y
+#   CONFIG_USE_EMOTE_MESSAGE_STYLE=n
+CONFIG_USE_EMOTE_MESSAGE_STYLE=y
+CONFIG_LANGUAGE_RU_RU=y
+
+# Имена файлов в образе ассетов хранятся в таблице esp_mmap_assets фиксированной
+# длины; на дефолтных 16 байтах «font_noto_sans_common_20_4.bin» обрезается до
+# «font_noto_sans_c», и emote_load_fonts ищет его по полному имени:
+#   E Expression_load: Font file not found: font_noto_sans_common_20_4.bin
+# То есть русский текст в EmoteDisplay остаётся без шрифта. 32 байта — ровно то,
+# что ставят тестовые приложения esp_emote_* / image_player (см. их
+# sdkconfig.defaults); образ пересобирается тем же значением, так что обе стороны
+# сходятся.
+CONFIG_MMAP_FILE_NAME_LENGTH=32
+
+CONFIG_ESP_HOSTED_FW_VERSION_MISMATCH_WARNING_SUPPRESS=y
