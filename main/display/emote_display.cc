@@ -14,6 +14,7 @@
 
 // ESP-IDF headers
 #include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_io_interface.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <lvgl.h>
@@ -37,6 +38,11 @@ namespace emote {
 
 static const char* TAG = "EmoteDisplay";
 
+struct EmoteUserCtx {
+    esp_lcd_panel_handle_t panel = nullptr;
+    bool has_async_io = false;
+};
+
 // ============================================================================
 // Forward Declarations
 // ============================================================================
@@ -59,9 +65,12 @@ static bool OnFlushIoReady(const esp_lcd_panel_io_handle_t panel_io,
 // Flush callback for emote
 static void OnFlushCallback(int x_start, int y_start, int x_end, int y_end, const void* data,
                             emote_handle_t handle) {
-    esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t)emote_get_user_data(handle);
-    if (panel != nullptr) {
-        esp_lcd_panel_draw_bitmap(panel, x_start, y_start, x_end, y_end, data);
+    EmoteUserCtx* ctx = static_cast<EmoteUserCtx*>(emote_get_user_data(handle));
+    if (ctx != nullptr && ctx->panel != nullptr) {
+        esp_lcd_panel_draw_bitmap(ctx->panel, x_start, y_start, x_end, y_end, data);
+        if (!ctx->has_async_io) {
+            emote_notify_flush_finished(handle);
+        }
     }
 }
 
@@ -69,10 +78,10 @@ static void OnFlushCallback(int x_start, int y_start, int x_end, int y_end, cons
 // Graphics Initialization Functions
 // ============================================================================
 
-static emote_handle_t InitializeEmote(const esp_lcd_panel_handle_t panel, const int width,
-                                      const int height) {
-    if (!panel) {
-        ESP_LOGE(TAG, "Invalid panel");
+static emote_handle_t InitializeEmote(const esp_lcd_panel_handle_t panel, EmoteUserCtx* ctx,
+                                      const int width, const int height) {
+    if (!panel || !ctx) {
+        ESP_LOGE(TAG, "Invalid panel or ctx");
         return nullptr;
     }
 
@@ -101,7 +110,7 @@ static emote_handle_t InitializeEmote(const esp_lcd_panel_handle_t panel, const 
                 .task_stack_in_ext = false,
             },
         .flush_cb = OnFlushCallback,
-        .user_data = (void*)panel,
+        .user_data = (void*)ctx,
     };
 
     emote_handle_t emote_handle = emote_init(&emote_cfg);
@@ -120,12 +129,20 @@ static emote_handle_t InitializeEmote(const esp_lcd_panel_handle_t panel, const 
 EmoteDisplay::EmoteDisplay(const esp_lcd_panel_handle_t panel,
                            const esp_lcd_panel_io_handle_t panel_io, const int width,
                            const int height) {
-    emote_handle_ = InitializeEmote(panel, width, height);
+    user_ctx_ = new EmoteUserCtx();
+    user_ctx_->panel = panel;
+    user_ctx_->has_async_io = false;
 
-    const esp_lcd_panel_io_callbacks_t cbs = {
-        .on_color_trans_done = OnFlushIoReady,
-    };
-    esp_lcd_panel_io_register_event_callbacks(panel_io, &cbs, emote_handle_);
+    emote_handle_ = InitializeEmote(panel, user_ctx_, width, height);
+
+    if (panel_io != nullptr && panel_io->register_event_callbacks != nullptr) {
+        const esp_lcd_panel_io_callbacks_t cbs = {
+            .on_color_trans_done = OnFlushIoReady,
+        };
+        if (esp_lcd_panel_io_register_event_callbacks(panel_io, &cbs, emote_handle_) == ESP_OK) {
+            user_ctx_->has_async_io = true;
+        }
+    }
 }
 
 EmoteDisplay::~EmoteDisplay() {
@@ -133,12 +150,20 @@ EmoteDisplay::~EmoteDisplay() {
         emote_deinit(emote_handle_);
         emote_handle_ = nullptr;
     }
+    if (user_ctx_) {
+        delete user_ctx_;
+        user_ctx_ = nullptr;
+    }
 }
 
 void EmoteDisplay::SetEmotion(const char* const emotion) {
     ESP_LOGI(TAG, "SetEmotion: %s", emotion);
     if (emote_handle_ && emotion && strlen(emotion) > 0) {
-        emote_set_anim_emoji(emote_handle_, emotion);
+        const char* target = emotion;
+        if (std::strcmp(emotion, "robot_2") == 0) {
+            target = "neutral";
+        }
+        emote_set_anim_emoji(emote_handle_, target);
     }
 }
 
@@ -223,6 +248,7 @@ void EmoteDisplay::UnmountAssets() {
     if (emote_handle_ != nullptr) {
         emote_unmount_assets(emote_handle_);
     }
+    assets_loaded_ = false;
 }
 
 bool EmoteDisplay::GetAssetData(const std::string& name, const uint8_t*& data, size_t& size) {
@@ -234,7 +260,7 @@ bool EmoteDisplay::GetAssetData(const std::string& name, const uint8_t*& data, s
 
 void EmoteDisplay::LoadAssets() {
     if (emote_handle_ != nullptr) {
-        emote_load_assets(emote_handle_);
+        assets_loaded_ = emote_load_assets(emote_handle_) == ESP_OK;
     }
 }
 

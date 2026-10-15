@@ -9,6 +9,8 @@
 
 namespace emote {
 
+struct EmoteUserCtx;
+
 class EmoteDisplay : public Display {
 public:
     using Display::SetPreviewImage;
@@ -38,11 +40,19 @@ public:
     // Get emote handle for internal use
     emote_handle_t GetEmoteHandle() const { return emote_handle_; }
 
+    // Ассеты (шрифты, эмодзи, layout) монтируются и разбираются не в конструкторе
+    // борда, а позже — в Assets::Initialize(). Экран настроек звука должен
+    // дождаться именно этого момента, иначе emote_get_asset_data_by_name()
+    // возвращается с ошибкой и липо логи компоненты затапливает лог.
+    bool AssetsLoaded() const { return assets_loaded_; }
+
 private:
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
 
     emote_handle_t emote_handle_ = nullptr;
+    EmoteUserCtx* user_ctx_ = nullptr;
+    bool assets_loaded_ = false;
 };
 
 }  // namespace emote
